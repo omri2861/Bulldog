@@ -1,8 +1,7 @@
 from Crypto.Cipher import AES
 from Crypto.Cipher import Blowfish
 from Crypto.Cipher import _DES as DES
-from Crypto import Random
-from struct import pack
+import os
 
 __author__ = "Omri Levy"
 
@@ -10,46 +9,80 @@ __author__ = "Omri Levy"
 This module will be the encryption module for the files on Bulldog. It will contain various encryption and decryption
 functions, according to the types which are used by Bulldog.
 
-These function will be private, and will be accessed by two functions in this module: encrypt and decrypt. Their usage
-will allow choosing the encryption type, key, and so on....
+These function will be private, and will be accessed by two functions in this module: encrypt_file() and decrypt_file().
+Their usage will allow choosing the encryption type, _key, and so on....
 
 NOTE: This module needs PyCrypto installed to work properly.
 """
 
-DEFAULT_IV = "0000000000000000"
-TRIPLE_DES = 1
-AES_ENCRYPTION = 2
-BLOWFISH = 3
-CHUNK_SIZE = 512
+MODE_TDES = 1
+MODE_AES = 2
+MODE_BLOWFISH = 3
+CHUNK_SIZE = 256
 PADDING = '\x00'
+INFO_TEMPLATE = "iv:%s\r\nkey:%s\r\n"
+INFO_PATTERN = "iv:(.+)\r\nkey:(.+)\r\n"
+ENCRYPTED_FILE_ENDING = ".bef"
 
 
 class Suite(object):
-    def __init__(self, mode, key, iv, key2=None, key3=None):
+    """
+    This suite will simplify the use of file encryption by creating an easy syntax.
+    """
+    def __init__(self, method, iv=None, key=None):
         """
+        :param method: int. The encryption method which should be used (flag\ constant).
+        :param key: str. The encryption key which should be used.
+        :param iv: str. The initializing vector used for the block chain.
+        """
+        self.method = method
 
-        :param mode:
-        :param key:
-        :param iv:
-        """
-        if mode is AES_ENCRYPTION:
-            self.suite = AES.new(key, AES.MODE_CBC, iv)
-            self.encrypt = self.suite.encrypt
-            self.decrypt = self.suite.decrypt
+        if method is MODE_AES:
             self.BLOCK_SIZE = 16
-        elif mode is BLOWFISH:
-            self.suite = Blowfish.new(key, AES.MODE_CBC, iv)
+            self.KEY_SIZE = 16
+
+            if key is None and iv is None:
+                self._key = os.urandom(self.KEY_SIZE)
+                self._iv = '0' * self.BLOCK_SIZE
+            else:
+                self._key = key
+                self._iv = iv
+
+            self.suite = AES.new(self._key, AES.MODE_CBC, self._iv)
+            self.encrypt = self.suite.encrypt
+            self.decrypt = self.suite.decrypt
+
+        elif method is MODE_BLOWFISH:
+            self.BLOCK_SIZE = 8
+            self.KEY_SIZE = 16
+
+            if key is None and iv is None:
+                self._key = os.urandom(self.KEY_SIZE)
+                self._iv = '0' * self.BLOCK_SIZE
+            else:
+                self._key = key
+                self._iv = iv
+
+            self.suite = Blowfish.new(self._key, Blowfish.MODE_CBC, self._iv)
             self.encrypt = self.suite.encrypt
             self.decrypt = self.suite.decrypt
             self.BLOCK_SIZE = 8
-        elif mode is TRIPLE_DES:
-            if key3 is None:
-                key3 = key
+        elif method is MODE_TDES:
+
             self.BLOCK_SIZE = 8
+            self.KEY_SIZE = 24
+
+            if key is None and iv is None:
+                self._key = os.urandom(self.KEY_SIZE)
+                self._iv = '0' * self.BLOCK_SIZE
+            else:
+                self._key = key
+                self._iv = iv
+
             self.suites = [
-                DES.new(key, DES.MODE_CBC, iv),
-                DES.new(key2, DES.MODE_CBC, iv),
-                DES.new(key3, DES.MODE_CBC, iv)
+                DES.new(self._key[:8], DES.MODE_CBC, self._iv),
+                DES.new(self._key[8: 16], DES.MODE_CBC, self._iv),
+                DES.new(self._key[16:], DES.MODE_CBC, self._iv)
             ]
 
             def encrypt(data):
@@ -66,16 +99,24 @@ class Suite(object):
 
             self.encrypt = encrypt
             self.decrypt = decrypt
-# TODO: While writing the functions, the documentation should be changed to meet each encryption type's requirements.
+
+    def get_iv_and_key(self):
+        """
+        :return: tuple. (iv, key). The iv and key used by the suit.
+        """
+        return self._iv, self._key
 
 
-def add_padding(text):
+def add_padding(text, block_size=16):
     """
     Adds padding to the given string so that it's length is dividable by 16 and can be encrypted.
     :param text: str. The string which should be padded
+    :param block_size: The size of each block in the encryption.
     :return: str. The string with padding.
     """
-    padding_length = 16 - (len(text) % 16)
+    if len(text) % block_size == 0:
+        return text
+    padding_length = block_size - (len(text) % block_size)
     padded_text = text
     while padding_length != 0:
         padded_text += PADDING
@@ -83,33 +124,47 @@ def add_padding(text):
     return padded_text
 
 
-def encrypt_file_test():
+def encrypt_file(filename, method):
     """
-    This function is a temporary function which meant to test the encryption of files.
-    :return: None
+    Encrypts the given file and returns the iv and key of the encryption.
+    Note: At this point, the function will create a copy of the encrypted file and will not delete the original file.
+    This is because the program is not done, and it might not succeed in decrypting the file, and the encrypted data
+    may be lost.
+    :param filename: str. The path to the file which should be encrypted.
+    :param method: int. The encryption method which should be used (As a flag constant).
+    :return: tuple. (iv, key)
     """
-    in_file = r"F:\Cyber\Bulldog\src\README.txt"
-    out_file = r"F:\Cyber\Bulldog\src\README-encrypted.txt"
-    suite = Suite(AES_ENCRYPTION, 'omrithekingofall', DEFAULT_IV)
-    with open(in_file, mode='rb') as input_file:
+    # TODO: add 'os.remove(filename)' at the end of the function when ready.
+
+    out_file = filename + ENCRYPTED_FILE_ENDING
+
+    suite = Suite(method)
+
+    with open(filename, mode='rb') as input_file:
         with open(out_file, mode='wb') as output:
             chunk = input_file.read(CHUNK_SIZE)
             while len(chunk) != 0:
-                chunk = add_padding(chunk)
+                chunk = add_padding(chunk, suite.BLOCK_SIZE)
                 cipher = suite.encrypt(chunk)
                 output.write(cipher)
                 chunk = input_file.read(CHUNK_SIZE)
 
+    return suite.get_iv_and_key()
 
-def decrypt_file_test():
+
+def decrypt_file(filename, method, iv, key):
     """
-    This function is a temporary function which meant to test the decryption of files.
+    This function will decrypt the selected file.
+    :param filename: str. The path to the file which should be decrypted.
+    :param method: int. The decryption method which should be used (flag\ constant).
+    :param key: str. The decryption key which should be used.
+    :param iv: str. The initializing vector used for the block chain.
     :return: None
     """
-    in_file = r"F:\Cyber\Bulldog\src\README-encrypted.txt"
-    out_file = r"F:\Cyber\Bulldog\src\README-decrypted.txt"
-    suite = Suite(AES_ENCRYPTION, 'omrithekingofall', DEFAULT_IV)
-    with open(in_file, mode='rb') as input_file:
+    out_file = filename[:filename.index(ENCRYPTED_FILE_ENDING)]
+    suite = Suite(method, iv, key)
+
+    with open(filename, mode='rb') as input_file:
         with open(out_file, mode='wb') as output:
             chunk = input_file.read(CHUNK_SIZE)
             while len(chunk) != 0:
@@ -117,11 +172,3 @@ def decrypt_file_test():
                 cipher = cipher.rstrip(PADDING)
                 output.write(cipher)
                 chunk = input_file.read(CHUNK_SIZE)
-
-
-def main():
-    encrypt_file_test()
-    decrypt_file_test()
-
-if __name__ == '__main__':
-    main()
