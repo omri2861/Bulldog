@@ -23,6 +23,9 @@ PADDING = '\x00'
 INFO_TEMPLATE = "iv:%s\r\nkey:%s\r\n"
 INFO_PATTERN = "iv:(.+)\r\nkey:(.+)\r\n"
 ENCRYPTED_FILE_ENDING = ".bef"
+MAGIC_NUMBER = bytearray(b'\x02\x86')
+EMPTY_ID = bytearray(4)
+HEADERS_SIZE = 10
 
 
 class Suite(object):
@@ -124,7 +127,34 @@ def add_padding(text, block_size=16):
     return padded_text
 
 
-def encrypt_file(filename, method):
+def get_file_headers(user_id, file_id):
+    """
+    This function will receive the raw file_id numbers and will return a byte array of the encrypted file headers which could
+    be written directly into the file.
+    :param user_id: int. The user file_id number.
+    :param file_id: int. The file file_id number.
+    :return: bytearray. The headers which should be written to the encrypted file.
+    """
+    user_id_bytes = bytearray(EMPTY_ID)  # copy the bytearray
+    file_id_bytes = bytearray(EMPTY_ID)  # copy the bytearray
+
+    index = len(user_id_bytes) - 1
+    while user_id != 0:
+        user_id_bytes[index] = user_id % 256
+        user_id /= 256
+        index -= 1
+
+    index = len(file_id_bytes) - 1
+    while file_id != 0:
+        file_id_bytes[index] = file_id % 256
+        file_id /= 256
+        index -= 1
+    headers = bytearray(MAGIC_NUMBER) # copy the bytearray
+    headers += user_id_bytes + file_id_bytes
+    return headers
+
+
+def encrypt_file(filename, method, user_id, file_id):
     """
     Encrypts the given file and returns the iv and key of the encryption.
     Note: At this point, the function will create a copy of the encrypted file and will not delete the original file.
@@ -140,8 +170,10 @@ def encrypt_file(filename, method):
 
     suite = Suite(method)
 
-    with open(filename, mode='rb') as input_file:
-        with open(out_file, mode='wb') as output:
+    with open(out_file, mode='wb') as output:
+        headers = get_file_headers(user_id, file_id)
+        output.write(headers)
+        with open(filename, mode='rb') as input_file:
             chunk = input_file.read(CHUNK_SIZE)
             while len(chunk) != 0:
                 chunk = add_padding(chunk, suite.BLOCK_SIZE)
@@ -165,6 +197,7 @@ def decrypt_file(filename, method, iv, key):
     suite = Suite(method, iv, key)
 
     with open(filename, mode='rb') as input_file:
+        headers = input_file.read(HEADERS_SIZE)
         with open(out_file, mode='wb') as output:
             chunk = input_file.read(CHUNK_SIZE)
             while len(chunk) != 0:
