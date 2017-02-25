@@ -21,7 +21,6 @@ MODE_BLOWFISH = 3
 CHUNK_SIZE = 256
 PADDING = '\x00'
 INFO_TEMPLATE = "iv:%s\r\nkey:%s\r\n"
-INFO_PATTERN = "iv:(.+)\r\nkey:(.+)\r\n"
 ENCRYPTED_FILE_ENDING = ".bef"
 MAGIC_NUMBER = bytearray(b'\x02\x86')
 EMPTY_ID = bytearray(4)
