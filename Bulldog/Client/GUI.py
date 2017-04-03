@@ -47,15 +47,41 @@ FILE_CHOOSING_TAB_TEXT = "Select the files which should be encrypted:"
 BULLDOG_BG_IMAGE = "image: url(:/images/bulldog_transperant.png);"
 GREY_BACKGROUND = "background-color: rgb(240, 240, 240, 180);"
 WHITE_BACKGROUND = "background-color: rgba(255, 255, 255, 255);"
+MODE_TDES = 1
+MODE_AES = 2
+MODE_BLOWFISH = 3
+
+
+class Task(object):
+    """
+    This class wil describe which files should be encrypted and how.
+    """
+    def __init__(self, method, username, password, path):
+        """
+        :param method: The selected encryption method.
+        :param username: The selected username.
+        :param password: The selected password.
+        :param path: The selected path.
+        """
+        self.method = method
+        self.username = username
+        self.password = password
+        self.path = path
+
+    def __str__(self):
+        return "method: %s\npath: %s\nusername: %s\npassword: %s" % (self.method, self.path, self.username,
+                                                                     self.password)
 
 
 class EncryptionWindow(QtGui.QMainWindow):
     def __init__(self, path):
         super(EncryptionWindow, self).__init__()
 
-        self.setup_ui(path)
+        self.selected_path = path
+        self.task = None
+        self.setup_ui()
 
-    def setup_ui(self, path):
+    def setup_ui(self):
 
         self.setObjectName(_fromUtf8("Bulldog- Encrypt"))
         self.resize(550, 360)
@@ -98,15 +124,11 @@ class EncryptionWindow(QtGui.QMainWindow):
 
         # Set up the file- selecting tree widget:
         self.model = QtGui.QFileSystemModel(self.file_selection)
-        self.model.setRootPath(_fromUtf8(path))
+        self.model.setRootPath(_fromUtf8(self.selected_path))
         self.file_selector = QtGui.QTreeView(self.file_selection)
         self.file_selector.setModel(self.model)
         self.file_selector.setRootIndex(self.model.index(self.model.rootPath()))
-        self.file_selector.setStyleSheet(_fromUtf8(""))
         self.file_selector.setObjectName(_fromUtf8("file_selector"))
-        self.file_selector.setAutoScroll(False)
-        self.file_selector.scroll
-        self.file_selector.verticalScrollBar().setFixedWidth(SCROLL_BAR_DEFAULT_WIDTH)
         self.verticalLayout.addWidget(self.file_selector)
 
         spacerItem2 = QtGui.QSpacerItem(20, 13, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Fixed)
@@ -250,14 +272,8 @@ class EncryptionWindow(QtGui.QMainWindow):
         # Final adjustments:
         self.retranslate_ui()
         self.connect_slots_and_signals()
-        self.custom_ui_settings()
 
         self.tab_widget.setCurrentIndex(0)
-
-    def custom_ui_settings(self):
-        self.AES_button.setStyleSheet(_fromUtf8(GREY_BACKGROUND))
-        self.blowfish_button.setStyleSheet(_fromUtf8(GREY_BACKGROUND))
-        self.TDES_button.setStyleSheet(_fromUtf8(GREY_BACKGROUND))
 
     def connect_slots_and_signals(self):
         QtCore.QObject.connect(self.cancel_button_1, QtCore.SIGNAL(_fromUtf8("clicked()")), self.close)
@@ -270,8 +286,6 @@ class EncryptionWindow(QtGui.QMainWindow):
         QtCore.QObject.connect(self.back_button_2, QtCore.SIGNAL(_fromUtf8("clicked()")), self.previous_page)
 
         QtCore.QMetaObject.connectSlotsByName(self)
-
-
 
     def retranslate_ui(self):
         self.setWindowTitle(_translate("MainWindow", "Bulldog- Encrypt", None))
@@ -304,13 +318,31 @@ class EncryptionWindow(QtGui.QMainWindow):
                                    _translate("MainWindow", "Step 3", None))
 
     def next_page(self):
-        self.tab_widget.setCurrentIndex(self.tab_widget.currentIndex() + 1)
+        if self.tab_widget.currentIndex() == 1:
+            if self.AES_button.isChecked() or self.TDES_button.isChecked() or self.blowfish_button.isChecked():
+                self.tab_widget.setCurrentIndex(self.tab_widget.currentIndex() + 1)
+            else:
+                # TODO: Can't go to next page popup here
+                pass
+        else:
+            self.tab_widget.setCurrentIndex(self.tab_widget.currentIndex() + 1)
 
     def previous_page(self):
         self.tab_widget.setCurrentIndex(self.tab_widget.currentIndex() - 1)
 
     def handle_finish_button(self):
-        self.close()
+        if len(self.username_edit.text()) == 0 or len(self.password_input.text()) == 0:
+            # TODO: 'Please enter username and password' popup
+            return
+        else:
+            encryption_method = 0
+            if self.AES_button.isChecked():
+                encryption_method = MODE_AES
+            elif self.blowfish_button.isChecked():
+                encryption_method = MODE_BLOWFISH
+            self.task = Task(encryption_method, self.username_edit.text(), self.password_input.text(), self.selected_path)
+            self.close()
+
 
 import _gui_root
 
