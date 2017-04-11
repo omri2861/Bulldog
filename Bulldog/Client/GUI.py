@@ -341,6 +341,8 @@ class EncryptionWindow(QtGui.QMainWindow):
                 encryption_method = MODE_AES
             elif self.blowfish_button.isChecked():
                 encryption_method = MODE_BLOWFISH
+            elif self.TDES_button.isChecked():
+                encryption_method = MODE_TDES
             self.task = Task(encryption_method, self.username_edit.text(), self.password_input.text(), self.selected_path)
             self.close()
 

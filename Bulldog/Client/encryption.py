@@ -26,6 +26,8 @@ MAGIC_NUMBER = bytearray(b'\x02\x86')
 EMPTY_ID = bytearray(4)
 HEADERS_SIZE = 10
 
+# TODO: Remove testing when done.
+
 
 class Suite(object):
     """
@@ -153,7 +155,7 @@ def get_file_headers(user_id, file_id):
     return headers
 
 
-def encrypt_file(filename, method, user_id, file_id):
+def encrypt_file(filename, method, user_id, file_id, iv=None, key=None):
     """
     Encrypts the given file and returns the iv and key of the encryption.
     Note: At this point, the function will create a copy of the encrypted file and will not delete the original file.
@@ -161,13 +163,19 @@ def encrypt_file(filename, method, user_id, file_id):
     may be lost.
     :param filename: str. The path to the file which should be encrypted.
     :param method: int. The encryption method which should be used (As a flag constant).
+    :param user_id:
+    :param file_id:
+    :param iv:
+    :param key:
     :return: tuple. (iv, key)
     """
-    # TODO: add 'os.remove(filename)' at the end of the function when ready.
 
     out_file = filename + ENCRYPTED_FILE_ENDING
 
-    suite = Suite(method)
+    if iv is not None and key is not None:
+        suite = Suite(method=method, iv=iv, key=key)
+    else:
+        suite = Suite(method)
 
     with open(out_file, mode='wb') as output:
         headers = get_file_headers(user_id, file_id)

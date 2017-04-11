@@ -1,1 +1,2 @@
-import Client
+from Client import *
+from networking import *
