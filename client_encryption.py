@@ -6,8 +6,6 @@ from Bulldog.Client import GUI, encryption
 from Bulldog import networking
 from pickle import dumps, loads
 import socket
-import struct
-from time import sleep
 
 """
 This is the program which should be executed when the client selects a few files and wants to encrypt them with bulldog.
@@ -16,7 +14,19 @@ This is the program which should be executed when the client selects a few files
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 8080
 SERVER_ADDRESS = SERVER_IP, SERVER_PORT
-DEFAULT_TIMEOUT = 0.5
+DEFAULT_TIMEOUT = 2
+IV_SIZES = {
+    1: 16,
+    2: 8,
+    3: 8
+}
+KEY_SIZES = {
+    1: 16,
+    2: 16,
+    3: 24
+}
+BAND_WIDTH = 1024
+
 
 def get_directory_files_list(dir_path):
     """
@@ -94,48 +104,33 @@ def main():
         sys.exit()
 
     # TODO:Confirm username and password:
-    login_msg = networking.BDTPMessage(operation=networking.OPERATIONS['login'], method=task.method, flags=0, status=0,
+    login_msg = networking.BDTPMessage(operation=networking.OPERATIONS['login'], status=0,
                                        data=task.username+"\r\n"+task.password)
     server.send(login_msg.pack())
-    print "Sent login message: "
-    print login_msg
-    print "now we wait"
-    sleep(1)
-    print "Now we receive: "
-    server_response = server.recv(1024)
-    print "The server responded: " + server_response
-    if len(server_response) == 0:
-        print "The server had an error."
-        exit()
-    server_response = networking.BDTPMessage.unpack(server_response)
-    print "which means:"
-    print server_response
-    user_id = struct.unpack('i', server_response.data)[0]
-    if user_id == -1:
-        print "login failed"
-    else:
-        print "Login Successfull. Id: " + str(user_id)
+    server_response = networking.receive_full_message(server)
+    user_id = int(server_response.get_data())
 
-    # TODO: Start encrypting:
+    # Start encrypting:
     paths_to_encrypt = get_directory_files_list(task.path)
     for path in paths_to_encrypt:
-        iv = '0' * 8
-        key = os.urandom(16)
+        iv = '0' * IV_SIZES[task.method]
+        key = os.urandom(KEY_SIZES[task.method])
         new_file = networking.EncryptedFile(task.method, iv, key)
-        add_file_msg = networking.BDTPMessage(operation=networking.OPERATIONS['add file'], flags=0, status=0,
+
+        add_file_msg = networking.BDTPMessage(operation=networking.OPERATIONS['add file'], status=0,
                                               data=new_file.pack())
         server.send(add_file_msg.pack())
-        server_response = server.recv(1024)
-        server_response = networking.BDTPMessage.unpack(server_response)
-        file_id = struct.unpack('i', server_response.data)[0]
-        print "The file id: %d " % file_id
+
+        server_response = networking.receive_full_message(server)
+
+        file_id = int(server_response.get_data())
         encryption.encrypt_file(path, task.method, user_id, file_id, iv, key)
 
     # TODO:Finally, remove the original files:
     pass
 
     # Logout from the server:
-    logout_msg = networking.BDTPMessage(operation=networking.OPERATIONS['logout'], status=0, flags=0, data='')
+    logout_msg = networking.BDTPMessage(operation=networking.OPERATIONS['logout'], status=0, data='')
     server.send(logout_msg.pack())
     server.close()
 

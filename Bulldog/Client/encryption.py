@@ -15,9 +15,9 @@ Their usage will allow choosing the encryption type, _key, and so on....
 NOTE: This module needs PyCrypto installed to work properly.
 """
 
-MODE_TDES = 1
-MODE_AES = 2
-MODE_BLOWFISH = 3
+MODE_AES = 1
+MODE_BLOWFISH = 2
+MODE_TDES = 3
 CHUNK_SIZE = 256
 PADDING = '\x00'
 INFO_TEMPLATE = "iv:%s\r\nkey:%s\r\n"
@@ -159,7 +159,7 @@ def encrypt_file(filename, method, user_id, file_id, iv=None, key=None):
     """
     Encrypts the given file and returns the iv and key of the encryption.
     Note: At this point, the function will create a copy of the encrypted file and will not delete the original file.
-    This is because the program is not done, and it might not succeed in decrypting the file, and the encrypted data
+    This is because the program is not done, and it might not succeed in decrypting the file, and the encrypted _data
     may be lost.
     :param filename: str. The path to the file which should be encrypted.
     :param method: int. The encryption method which should be used (As a flag constant).

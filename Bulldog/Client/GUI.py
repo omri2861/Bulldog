@@ -40,7 +40,7 @@ AES_EXPLANATION = "AES- Advanced Encryption Standard.\nStrong, reliable encrypti
                   "standard by the U.S. government.\nConsidered slow.Recommended for small or medium sized files."
 BLOWFISH_EXPLANATION = "Blowfish- Not as reliable as the AES, but still one of the best\n" \
                        "encryption methods.\nIt is very fast and effective.\nHighly recommended for large" \
-                       " files with lots of data."
+                       " files with lots of _data."
 TDES_EXPLANATION = "Triple DES- Considered slow, but provides extra security,\n" \
                    "as it uses three keys, Recommended for small, important files"
 AUTHENTICATION_TEXT = "Please log in to the system, so the encryption could be completed:"
@@ -48,9 +48,9 @@ FILE_CHOOSING_TAB_TEXT = "Select the files which should be encrypted:"
 BULLDOG_BG_IMAGE = "image: url(:/images/bulldog_transperant.png);"
 GREY_BACKGROUND = "background-color: rgb(240, 240, 240, 180);"
 WHITE_BACKGROUND = "background-color: rgba(255, 255, 255, 255);"
-MODE_TDES = 1
-MODE_AES = 2
-MODE_BLOWFISH = 3
+MODE_AES = 1
+MODE_BLOWFISH = 2
+MODE_TDES = 3
 
 
 class Task(object):

@@ -12,12 +12,17 @@ OPERATIONS = {
     "create connection": "CON\x00"
 }
 BAD_METHOD_MSG = "Invalid method: Method should be a number in the range of 1-3."
+BAD_STRING_MSG = "This is not a BDTP Message. Note: It is likely that the message is an empty string due to" \
+                             "a server error and the socket short timeout."
+BAD_DATA_SIZE_MSG = "It's impossible that the size of the data is smaller than the actual data. There is an error" \
+                         "with the client or server."
+BAND_WIDTH = 1024
 
 
 class EncryptedFile(object):
     """
     This class will represent a file which should be encrypted by the client. The client will use this class to send the
-    data of a file to the server, and the server will use it to easily store it in the database.
+    _data of a file to the server, and the server will use it to easily store it in the database.
     properties:
     method- int. The encryption method. A number which varies from 0-2
     iv- str. The initializing vector for the encryption.
@@ -51,8 +56,8 @@ class EncryptedFile(object):
         """
         raw_method = raw_string[0:2]
         method = struct.unpack('h', raw_method)[0]
-        cls.method, cls.iv, cls.key = struct.unpack(cls.FORMATS[method], raw_string)
-        return cls
+        method, iv, key = struct.unpack(cls.FORMATS[method], raw_string)
+        return cls(method, iv, key)
 
     def __str__(self):
         """
@@ -71,23 +76,20 @@ class BDTPMessage(object):
     This class will allow easy usage of the BDTP protocol and sending message with it.
     """
     PROTOCOL = "4shh%ds"
-    PROTOCOL_FIELDS = ('operation', 'status', 'flags', 'data')
     HEADER_LENGTH = 4 + 2 + 2
 
-    def __init__(self, **kwargs):
-        for key in self.PROTOCOL_FIELDS:
-            if key not in kwargs.keys():
-                raise ValueError("Note: Please provide the '%s' field to the message. " % key)
-        for protocol_field in self.PROTOCOL_FIELDS:
-            self.__setattr__(protocol_field, kwargs[protocol_field])
-        self.data = str(self.data)
+    def __init__(self, operation, status, data):
+        self.operation = operation
+        self.status = status
+        self._data = str(data)
+        self.size = len(self._data)
 
     def pack(self):
         """
         This method will pack the protocol attributes and values to a string as described by the protocol, ready to be
         sent through the socket.
         """
-        return struct.pack(self.PROTOCOL % len(self.data), self.operation, self.status, self.flags, self.data)
+        return struct.pack(self.PROTOCOL % self.size, self.operation, self.status, self.size, self._data)
 
     @classmethod
     def unpack(cls, raw_msg):
@@ -96,10 +98,11 @@ class BDTPMessage(object):
         """
         data_len = len(raw_msg) - cls.HEADER_LENGTH
         if data_len < 0:
-            raise ValueError("This is not a BDTP Message. Note: It is likely that the message is an empty string due to"
-                             "a server error and the socket short timeout.")
-        cls.operation, cls.status, cls.flags, cls.data = struct.unpack(cls.PROTOCOL % data_len, raw_msg)
-        return cls
+            raise ValueError(BAD_STRING_MSG)
+        operation, status, size, data = struct.unpack(cls.PROTOCOL % data_len, raw_msg)
+        msg = cls(operation=operation, status=status, data=data)
+        msg.size = size
+        return msg
 
     def __str__(self):
         """
@@ -109,17 +112,43 @@ class BDTPMessage(object):
         """
         description = "Operation: %s\n" % self.operation
         description += "Status Code: %d\n" % self.status
-        description += "Flags: %d\n" % self.flags
-        description += "Data: \n%s\n" % self.data
+        description += "Size: %d\n" % self.size
+        description += "Data: \n%s\n" % self._data
         return description
 
+    def set_data(self, data):
+        """
 
-def main():
+        :param data:
+        :return:
+        """
+        self._data = str(data)
+        self.size = len(self._data)
+
+    def get_data(self):
+        return self._data
+
+
+def receive_full_message(receiving_socket):
     """
-    Add Documentation here
+    This function will receive the full message from the given socket. It will update the msg object.
+    :param receiving_socket: socket.socket. The socket which sent the message.
+    :return: None
     """
-    pass  # Add Your Code Here
+    msg = receiving_socket.recv(BAND_WIDTH)
+    msg = BDTPMessage.unpack(msg)
 
+    full_data = msg.get_data()
+    if msg.size == len(full_data):
+        return msg
+    elif msg.size < len(full_data):
+        raise ValueError(BAD_DATA_SIZE_MSG)
 
-if __name__ == '__main__':
-    main()
+    missing_data_size = msg.size - len(full_data)
+    while missing_data_size > 0:
+        chunk = receiving_socket.recv(BAND_WIDTH)
+        full_data += chunk
+        missing_data_size -= len(chunk)
+
+    msg.set_data(full_data)
+    return msg
