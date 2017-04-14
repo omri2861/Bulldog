@@ -56,6 +56,9 @@ MODE_TDES = 3
 class Task(object):
     """
     This class wil describe which files should be encrypted and how.
+    It's purpose is to send this information from the GUI window to the program operating it. It allows the programmer
+    to distinct the GUI from the communication with the server and the encryption by allowing him to access all the
+    information needed from the GUI through this class.
     """
     def __init__(self, method, username, password, path):
         """
@@ -83,7 +86,10 @@ class EncryptionWindow(QtGui.QMainWindow):
         self.setup_ui()
 
     def setup_ui(self):
-
+        """
+        Sets up all of the graphic elements in the main window.
+        :return: None
+        """
         self.setObjectName(_fromUtf8("Bulldog- Encrypt"))
         self.resize(550, 360)
         size_policy = QtGui.QSizePolicy(QtGui.QSizePolicy.Preferred, QtGui.QSizePolicy.Preferred)
@@ -277,6 +283,10 @@ class EncryptionWindow(QtGui.QMainWindow):
         self.tab_widget.setCurrentIndex(0)
 
     def connect_slots_and_signals(self):
+        """
+        Connects the buttons and other events to functions.
+        :return: None
+        """
         QtCore.QObject.connect(self.cancel_button_1, QtCore.SIGNAL(_fromUtf8("clicked()")), self.close)
         QtCore.QObject.connect(self.cancel_button_2, QtCore.SIGNAL(_fromUtf8("clicked()")), self.close)
         QtCore.QObject.connect(self.cancel_button_3, QtCore.SIGNAL(_fromUtf8("clicked()")), self.close)
@@ -289,6 +299,10 @@ class EncryptionWindow(QtGui.QMainWindow):
         QtCore.QMetaObject.connectSlotsByName(self)
 
     def retranslate_ui(self):
+        """
+        This function was built by the code generator. It displays the text in the various graphic elements.
+        :return: None
+        """
         self.setWindowTitle(_translate("MainWindow", "Bulldog- Encrypt", None))
         self.file_selection_label.setText(_translate("MainWindow", FILE_CHOOSING_TAB_TEXT, None))
         self.file_selection_label.setStyleSheet(_fromUtf8(GREY_BACKGROUND))
@@ -319,6 +333,9 @@ class EncryptionWindow(QtGui.QMainWindow):
                                    _translate("MainWindow", "Step 3", None))
 
     def next_page(self):
+        """
+        This function should be paired with the 'next' button. It will move the tab widget to the next tab.
+        """
         if self.tab_widget.currentIndex() == 1:
             if self.AES_button.isChecked() or self.TDES_button.isChecked() or self.blowfish_button.isChecked():
                 self.tab_widget.setCurrentIndex(self.tab_widget.currentIndex() + 1)
@@ -329,9 +346,16 @@ class EncryptionWindow(QtGui.QMainWindow):
             self.tab_widget.setCurrentIndex(self.tab_widget.currentIndex() + 1)
 
     def previous_page(self):
+        """
+        This function should be paired with the 'back' button. It will move the tab widget to the previous tab.
+        """
         self.tab_widget.setCurrentIndex(self.tab_widget.currentIndex() - 1)
 
     def handle_finish_button(self):
+        """
+        This function should be paired with the 'finis' button. It will close the window safely and will create the task
+        object which describes the user encryption request.
+        """
         if len(self.username_edit.text()) == 0 or len(self.password_input.text()) == 0:
             # TODO: 'Please enter username and password' popup
             return
@@ -352,7 +376,7 @@ import _gui_root
 
 def main():
     """
-    The main function of the program.
+    The main function of the program. Made for debugging.
     :return: None
     """
     app = QtGui.QApplication(sys.argv)

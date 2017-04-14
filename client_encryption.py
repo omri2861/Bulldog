@@ -15,6 +15,7 @@ SERVER_IP = "127.0.0.1"
 SERVER_PORT = 8080
 SERVER_ADDRESS = SERVER_IP, SERVER_PORT
 DEFAULT_TIMEOUT = 2
+# The key and IV sizes according to the encryption methods (by their number)
 IV_SIZES = {
     1: 16,
     2: 8,
@@ -25,11 +26,13 @@ KEY_SIZES = {
     2: 16,
     3: 24
 }
-BAND_WIDTH = 1024
+NO_TASK_MSG = "Error: Did not receive task from subprocess."
 
 
 def get_directory_files_list(dir_path):
     """
+The function will iterate over all of the files and subdirectories in the given path, and will return a list of all
+the files it contains and its sub directories. If the given path is a file, it will be returned in a list.
     :param dir_path: The path of the directory which should be listed.
     :return: A list of strings containing the directory's files' full path.
     """
@@ -47,11 +50,13 @@ def get_directory_files_list(dir_path):
 
 def launch_config_window(encryption_path, parent_input):
     """
-    This function will launch a Bulldog encryption window- A window which confirms the files requested, username and
-    password.
-    :param encryption_path:
-    :param parent_input:
-    :return:
+This function will launch a Bulldog encryption window- A window which confirms the files requested, username and
+password.
+This function is meant to be executed as a different process (not a thread as GUI only works in main thread) and is
+expected to return its result pickled through the parent input instead of a return value.
+    :param encryption_path: The path to the file or directory which should be encrypted.
+    :param parent_input: A writable buffer. The function will return it's result pickled through this buffer/ stream.
+    :return: A Task object- which contains the details of the user encryption request.
     """
     app = QtGui.QApplication(sys.argv)
 
@@ -67,7 +72,7 @@ def launch_config_window(encryption_path, parent_input):
 
 def main():
     """
-    The main function of the program.
+    The main function of the program. Will execute the GUI and request the server to encrypt the file.
     :return: None
     """
     encryption_path = sys.argv[1]
@@ -101,7 +106,7 @@ def main():
     child_conn.close()
 
     if task is None:
-        sys.exit()
+        raise Exception(NO_TASK_MSG)
 
     # TODO:Confirm username and password:
     login_msg = networking.BDTPMessage(operation=networking.OPERATIONS['login'], status=0,

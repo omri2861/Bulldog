@@ -1,7 +1,7 @@
 import struct
 
 """
-This module will contain all the objects needed for the communication between the server and the client.
+This module will contains all the objects needed for the communication between the server and the client.
 """
 
 OPERATIONS = {
@@ -14,20 +14,21 @@ OPERATIONS = {
 BAD_METHOD_MSG = "Invalid method: Method should be a number in the range of 1-3."
 BAD_STRING_MSG = "This is not a BDTP Message. Note: It is likely that the message is an empty string due to" \
                              "a server error and the socket short timeout."
-BAD_DATA_SIZE_MSG = "It's impossible that the size of the data is smaller than the actual data. There is an error" \
+BAD_DATA_SIZE_MSG = "It's impossible that the _size of the data is smaller than the actual data. There is an error" \
                          "with the client or server."
 BAND_WIDTH = 1024
 
 
 class EncryptedFile(object):
     """
-    This class will represent a file which should be encrypted by the client. The client will use this class to send the
-    _data of a file to the server, and the server will use it to easily store it in the database.
+This class will represent a file which should be encrypted by the client. The client will use this class to send the
+data of a file to the server, and the server will use it to easily store it in the database.
     properties:
     method- int. The encryption method. A number which varies from 0-2
     iv- str. The initializing vector for the encryption.
     key- str. The key used for the encryption.
     """
+    # Formats of packing according to method number:
     FORMATS = {
         1: "h16s16s",
         2: "h8s16s",
@@ -35,6 +36,12 @@ class EncryptedFile(object):
     }
 
     def __init__(self, method, iv, key):
+        """
+Will construct a class from the given properties.
+        :param method: int.
+        :param iv: str.
+        :param key: str.
+        """
         if method not in self.FORMATS.keys():
             raise ValueError(BAD_METHOD_MSG)
         self.iv = iv
@@ -73,7 +80,16 @@ class EncryptedFile(object):
 
 class BDTPMessage(object):
     """
-    This class will allow easy usage of the BDTP protocol and sending message with it.
+This class will allow easy usage of the BDTP protocol and sending message with it.
+The class' properties are identical to the Protocol's fields:
+    operation- string. The operation request, represented by four characters (similar to http).
+    status- int. The status of the request- whether it was successfull or not (similar to http).
+    _size- int. The _size of the data. Note: This property is not given through a parameter, but the objects updates it
+    by itself. In this method, if there is a difference between the _size and the actual length of the data, it is
+    possible to know that the message hasn't been fully received from the socket, or there's a bug. It is a private
+    property, as only the object is allowed to calculate the data size.
+    _data- The data of the request which should be transferred through the socket. It is a private method, as the object
+    has to update its properties if the data is changed and cannot allow access to anyone.
     """
     PROTOCOL = "4shh%ds"
     HEADER_LENGTH = 4 + 2 + 2
@@ -82,26 +98,27 @@ class BDTPMessage(object):
         self.operation = operation
         self.status = status
         self._data = str(data)
-        self.size = len(self._data)
+        self._size = len(self._data)
 
     def pack(self):
         """
         This method will pack the protocol attributes and values to a string as described by the protocol, ready to be
         sent through the socket.
         """
-        return struct.pack(self.PROTOCOL % self.size, self.operation, self.status, self.size, self._data)
+        return struct.pack(self.PROTOCOL % self._size, self.operation, self.status, self._size, self._data)
 
     @classmethod
     def unpack(cls, raw_msg):
         """
-        This method work like the 'struct.unpack' method. It will unpack the given string into the class attributes.
+        This method works like the 'struct.unpack' method. It will unpack the given string into the class attributes.
+        :param raw_msg: str.
         """
         data_len = len(raw_msg) - cls.HEADER_LENGTH
         if data_len < 0:
             raise ValueError(BAD_STRING_MSG)
         operation, status, size, data = struct.unpack(cls.PROTOCOL % data_len, raw_msg)
         msg = cls(operation=operation, status=status, data=data)
-        msg.size = size
+        msg._size = size
         return msg
 
     def __str__(self):
@@ -112,39 +129,37 @@ class BDTPMessage(object):
         """
         description = "Operation: %s\n" % self.operation
         description += "Status Code: %d\n" % self.status
-        description += "Size: %d\n" % self.size
+        description += "Size: %d\n" % self._size
         description += "Data: \n%s\n" % self._data
         return description
 
     def set_data(self, data):
-        """
-
-        :param data:
-        :return:
-        """
         self._data = str(data)
-        self.size = len(self._data)
+        self._size = len(self._data)
 
     def get_data(self):
         return self._data
+
+    def get_size(self):
+        return self._size
 
 
 def receive_full_message(receiving_socket):
     """
     This function will receive the full message from the given socket. It will update the msg object.
     :param receiving_socket: socket.socket. The socket which sent the message.
-    :return: None
+    :return: The message as a BTDPMessage object.
     """
     msg = receiving_socket.recv(BAND_WIDTH)
     msg = BDTPMessage.unpack(msg)
 
     full_data = msg.get_data()
-    if msg.size == len(full_data):
+    if msg.get_size() == len(full_data):
         return msg
-    elif msg.size < len(full_data):
+    elif msg.get_size() < len(full_data):
         raise ValueError(BAD_DATA_SIZE_MSG)
 
-    missing_data_size = msg.size - len(full_data)
+    missing_data_size = msg.get_size() - len(full_data)
     while missing_data_size > 0:
         chunk = receiving_socket.recv(BAND_WIDTH)
         full_data += chunk

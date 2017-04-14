@@ -35,6 +35,8 @@ class Suite(object):
     """
     def __init__(self, method, iv=None, key=None):
         """
+        The init function which will set the iv and key according to the given encryption method. It will also set the
+        'encrypt' and 'decrypt' class methods.
         :param method: int. The encryption method which should be used (flag\ constant).
         :param key: str. The encryption key which should be used.
         :param iv: str. The initializing vector used for the block chain.
@@ -106,7 +108,7 @@ class Suite(object):
 
     def get_iv_and_key(self):
         """
-        :return: tuple. (iv, key). The iv and key used by the suit.
+        :return: tuple. (iv, key). The iv and key used by the suit to encrypt\decrypt files.
         """
         return self._iv, self._key
 
@@ -115,7 +117,7 @@ def add_padding(text, block_size=16):
     """
     Adds padding to the given string so that it's length is dividable by 16 and can be encrypted.
     :param text: str. The string which should be padded
-    :param block_size: The size of each block in the encryption.
+    :param block_size: The _size of each block in the encryption.
     :return: str. The string with padding.
     """
     if len(text) % block_size == 0:
@@ -130,14 +132,14 @@ def add_padding(text, block_size=16):
 
 def get_file_headers(user_id, file_id):
     """
-    This function will receive the raw file_id numbers and will return a byte array of the encrypted file headers which could
-    be written directly into the file.
-    :param user_id: int. The user file_id number.
-    :param file_id: int. The file file_id number.
-    :return: bytearray. The headers which should be written to the encrypted file.
+    This function will receive the raw file_id and user_id numbers and will return a byte array of the encrypted file
+    headers which could be written directly into the file.
+    :param user_id: int. The id of the user which encrypts the file.
+    :param file_id: int. The file id number.
+    :return: byte array. The headers which should be written to the encrypted file.
     """
-    user_id_bytes = bytearray(EMPTY_ID)  # copy the bytearray
-    file_id_bytes = bytearray(EMPTY_ID)  # copy the bytearray
+    user_id_bytes = bytearray(EMPTY_ID)  # copy the byte array
+    file_id_bytes = bytearray(EMPTY_ID)  # copy the byte array
 
     index = len(user_id_bytes) - 1
     while user_id != 0:
@@ -150,27 +152,30 @@ def get_file_headers(user_id, file_id):
         file_id_bytes[index] = file_id % 256
         file_id /= 256
         index -= 1
-    headers = bytearray(MAGIC_NUMBER) # copy the bytearray
+    headers = bytearray(MAGIC_NUMBER)  # copy the byte array
     headers += user_id_bytes + file_id_bytes
     return headers
 
 
-def encrypt_file(filename, method, user_id, file_id, iv=None, key=None):
+def encrypt_file(file_path, method, user_id, file_id, iv=None, key=None):
     """
-    Encrypts the given file and returns the iv and key of the encryption.
-    Note: At this point, the function will create a copy of the encrypted file and will not delete the original file.
-    This is because the program is not done, and it might not succeed in decrypting the file, and the encrypted _data
-    may be lost.
-    :param filename: str. The path to the file which should be encrypted.
+Encrypts the given file and returns the iv and key of the encryption.
+This function allows much easier usage of the suite and the entire module, as it fully and safely encrypts a file using
+one function only.
+Note: This function does not delete the original decrypted file.
+    :param file_path: str. The path to the file which should be encrypted.
     :param method: int. The encryption method which should be used (As a flag constant).
-    :param user_id:
-    :param file_id:
-    :param iv:
-    :param key:
-    :return: tuple. (iv, key)
+    :param user_id: int. The id of the user which encrypts the file.
+    :param file_id: int. The id of the file being encrypted.
+    :param iv: str. optional, in case the program which uses the suit wants to select the iv itself, instead of letting
+    the suite to do it by itself, or when the suite is made to decrypt.
+    :param key: str. optional, in case the program which uses the suit wants to select the key itself, instead of
+    letting the suite to do it by itself, or when the suite is made to decrypt.
+    :return: tuple. (iv, key) which were used to encrypt the file (needed when the function randomly chooses the key and
+    iv and they are not given).
     """
 
-    out_file = filename + ENCRYPTED_FILE_ENDING
+    out_file = file_path + ENCRYPTED_FILE_ENDING
 
     if iv is not None and key is not None:
         suite = Suite(method=method, iv=iv, key=key)
@@ -180,7 +185,7 @@ def encrypt_file(filename, method, user_id, file_id, iv=None, key=None):
     with open(out_file, mode='wb') as output:
         headers = get_file_headers(user_id, file_id)
         output.write(headers)
-        with open(filename, mode='rb') as input_file:
+        with open(file_path, mode='rb') as input_file:
             chunk = input_file.read(CHUNK_SIZE)
             while len(chunk) != 0:
                 chunk = add_padding(chunk, suite.BLOCK_SIZE)
@@ -193,7 +198,8 @@ def encrypt_file(filename, method, user_id, file_id, iv=None, key=None):
 
 def decrypt_file(filename, method, iv, key):
     """
-    This function will decrypt the selected file.
+    This function will decrypt the selected file, using the decryption suite. This function is using the suite, but
+    allows an easier usage of it, as it fully decrypts a file with one function.
     :param filename: str. The path to the file which should be decrypted.
     :param method: int. The decryption method which should be used (flag\ constant).
     :param key: str. The decryption key which should be used.
@@ -204,7 +210,6 @@ def decrypt_file(filename, method, iv, key):
     suite = Suite(method, iv, key)
 
     with open(filename, mode='rb') as input_file:
-        headers = input_file.read(HEADERS_SIZE)
         with open(out_file, mode='wb') as output:
             chunk = input_file.read(CHUNK_SIZE)
             while len(chunk) != 0:
