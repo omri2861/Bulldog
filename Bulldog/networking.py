@@ -17,6 +17,7 @@ BAD_STRING_MSG = "This is not a BDTP Message. Note: It is likely that the messag
 BAD_DATA_SIZE_MSG = "It's impossible that the _size of the data is smaller than the actual data. There is an error" \
                          "with the client or server."
 BAND_WIDTH = 1024
+LOGIN_DATA_SEP = '\r\n'
 
 
 class EncryptedFile(object):

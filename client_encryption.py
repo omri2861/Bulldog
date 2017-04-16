@@ -2,8 +2,7 @@ import os
 import multiprocessing
 import sys
 from PyQt4 import QtGui, QtCore
-from Bulldog.Client import GUI, encryption
-from Bulldog import networking
+from Bulldog import GUI, encryption, networking
 from pickle import dumps, loads
 import socket
 
@@ -70,6 +69,33 @@ expected to return its result pickled through the parent input instead of a retu
     parent_input.close()
 
 
+def launch_login_window(server_socket, parent_input, bad_login):
+    """
+This function will launch a Bulldog login window- A window which confirms the username and
+password.
+This function is meant to be executed as a different process (not a thread as GUI only works in main thread) and is
+expected to return its result pickled through the parent input instead of a return value.
+    :param server_socket: The socket of the server which should be logged in to.
+    :param parent_input: A writable buffer. The function will return it's result pickled through this buffer/ stream.
+    :param bad_login: bool. True if the user has already tried to login and failed, False if not.
+    :return: str. int as a string, represnting the user id. If -1 is returned, an error has occurred or the user chose
+    to abort.
+    """
+    if bad_login:
+        GUI.login_failed_popup()
+
+    app = QtGui.QApplication(sys.argv)
+
+    window = GUI.EncryptionWindow(server_socket)
+    window.show()
+
+    app.exec_()
+
+    user_id = window.user_id
+    parent_input.send(str(user_id))
+    parent_input.close()
+
+
 def main():
     """
     The main function of the program. Will execute the GUI and request the server to encrypt the file.
@@ -108,12 +134,15 @@ def main():
     if task is None:
         raise Exception(NO_TASK_MSG)
 
-    # TODO:Confirm username and password:
+    login_data = task.username + networking.LOGIN_DATA_SEP + task.password
     login_msg = networking.BDTPMessage(operation=networking.OPERATIONS['login'], status=0,
-                                       data=task.username+"\r\n"+task.password)
+                                       data=login_data)
     server.send(login_msg.pack())
     server_response = networking.receive_full_message(server)
     user_id = int(server_response.get_data())
+    if user_id == -1:
+        # TODO: Start the login window subprocess
+        pass
 
     # Start encrypting:
     paths_to_encrypt = get_directory_files_list(task.path)

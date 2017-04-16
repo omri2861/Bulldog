@@ -105,7 +105,7 @@ This function will handle a login message and will return the response which sho
     :param logged_in_users: list. The list of the currently active users.
     :return: BTDPMessage. The response to the login request.
     """
-    login_answer = networking.BDTPMessage(operation=networking.OPERATIONS['login'], status=0, data='')
+    login_answer = networking.BDTPMessage(operation=networking.OPERATIONS['login'], status=200, data='')
     username, password = tuple(request.get_data().split(SEPERATOR))
     user_id = authenticate_user(username, password)
     login_answer.set_data(user_id)
