@@ -410,6 +410,9 @@ class LoginWindow(QtGui.QDialog):
         self.setup_ui()
         self.retranslate_ui()
 
+        self.correct_username = self.username_edit.text()
+        self.correct_password = self.password_edit.text()
+
         self.connect_slots_and_signals()
 
         self.user_id = -1
@@ -423,10 +426,10 @@ class LoginWindow(QtGui.QDialog):
         :return: None
         """
         self.setObjectName(_fromUtf8("Login"))
-        self.resize(800, 600)
+        self.resize(350, 250)
         self.verticalLayout = QtGui.QVBoxLayout(self)
         self.verticalLayout.setObjectName(_fromUtf8("verticalLayout"))
-        spacerItem = QtGui.QSpacerItem(20, 48, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Fixed)
+        spacerItem = QtGui.QSpacerItem(20, 48, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding)
         self.verticalLayout.addItem(spacerItem)
         self.info_line_2 = QtGui.QHBoxLayout()
         self.info_line_2.setObjectName(_fromUtf8("info_line_2"))
@@ -525,6 +528,8 @@ class LoginWindow(QtGui.QDialog):
         if self.user_id == -1:
             login_failed_popup()
         else:
+            self.correct_username = self.username_edit.text()
+            self.correct_password = self.password_edit.text()
             self.close()
 
     def authenticate(self):

@@ -16,7 +16,7 @@ USER_INACTIVITY_TIMEOUT = 120
 SOCKET_TIMEOUT_WARNING = "The socket was timed out. If this repeats itself, it's a problem, but if it only happens " \
                          "once than it could just be timing problems, and thats just what this warning is for."
 SOCKET_ERROR_WARNING = "The socket had an error. If this repeats itself, it's a problem, but if it only happens once " \
-                       "than it could just be timing problems, and thats just what this warning is for."
+                       "than it could just be timing problems."
 
 
 class ActiveClient(object):
@@ -163,7 +163,12 @@ This function is built to be working as a thread in a multiclient server.
         print SOCKET_TIMEOUT_WARNING
         return
     except socket.error:
-        print
+        print SOCKET_ERROR_WARNING
+        active_sockets.remove(client_sock)
+        logged_in_users.remove(client_sock)
+        return
+
+    if request is None:
         return
 
     print "The client's request: "
@@ -171,8 +176,6 @@ This function is built to be working as a thread in a multiclient server.
 
     if request.operation == networking.OPERATIONS['login']:
         response = perform_login(request, client_sock, logged_in_users)
-        print "Made it here, and the response: "
-        print response
     elif request.operation == networking.OPERATIONS['add file']:
         requesting_user = logged_in_users[logged_in_users.index(client_sock)]
         response = add_encrypted_file(request, requesting_user.id)
@@ -223,7 +226,8 @@ def main():
             active_sockets.remove(sock)
         for sock in readable:
             if sock is not server_socket:
-                threading.Thread(target=receive_and_handle_message, args=(sock, logged_in_users, active_sockets)).start()
+                threading.Thread(target=receive_and_handle_message,
+                                 args=(sock, logged_in_users, active_sockets)).start()
             else:
                 new_client, client_address = server_socket.accept()
                 active_sockets.append(new_client)

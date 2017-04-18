@@ -12,12 +12,14 @@ OPERATIONS = {
     "create connection": "CON\x00"
 }
 BAD_METHOD_MSG = "Invalid method: Method should be a number in the range of 1-3."
-BAD_STRING_MSG = "This is not a BDTP Message. Note: It is likely that the message is an empty string due to" \
+BAD_STRING_MSG = "This is not a BDTP Message. Note: It is likely that the message is an empty string due to " \
                              "a server error and the socket short timeout."
 BAD_DATA_SIZE_MSG = "It's impossible that the _size of the data is smaller than the actual data. There is an error" \
                          "with the client or server."
 BAND_WIDTH = 1024
 LOGIN_DATA_SEP = '\r\n'
+BAD_STRING_WARNING = "Warning: Empty string given. This could happen because of timing issues, but if re-occurs, search" \
+                  "for a bug."
 
 
 class EncryptedFile(object):
@@ -112,10 +114,15 @@ The class' properties are identical to the Protocol's fields:
     def unpack(cls, raw_msg):
         """
         This method works like the 'struct.unpack' method. It will unpack the given string into the class attributes.
+        Note: It will return None if given an empty string.
         :param raw_msg: str.
         """
+        if len(raw_msg) == 0:
+            print BAD_STRING_WARNING
+            return None
         data_len = len(raw_msg) - cls.HEADER_LENGTH
         if data_len < 0:
+            print "(length is %d)\n" % len(raw_msg)
             raise ValueError(BAD_STRING_MSG)
         operation, status, size, data = struct.unpack(cls.PROTOCOL % data_len, raw_msg)
         msg = cls(operation=operation, status=status, data=data)
@@ -153,6 +160,9 @@ def receive_full_message(receiving_socket):
     """
     msg = receiving_socket.recv(BAND_WIDTH)
     msg = BDTPMessage.unpack(msg)
+
+    if msg is None:
+        return None
 
     full_data = msg.get_data()
     if msg.get_size() == len(full_data):
