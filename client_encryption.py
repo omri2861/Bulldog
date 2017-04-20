@@ -99,7 +99,7 @@ expected to return its result pickled through the parent input instead of a retu
     server_socket.close()
 
     if window.user_id != -1:
-        parent_input.send(username+networking.LOGIN_DATA_SEP+password)
+        parent_input.send(username + networking.DATA_SEP + password)
         parent_input.close()
     else:
         parent_input.send("")
@@ -117,7 +117,7 @@ def start_login_subprocess():
     login_subprocess.join()
 
     login_data = parent_conn.recv()
-    username, password = tuple(login_data.split(networking.LOGIN_DATA_SEP))
+    username, password = tuple(login_data.split(networking.DATA_SEP))
     return username, password
 
 
@@ -129,7 +129,7 @@ def perform_login(server_socket, username, password):
     :param password: The password of the user.
     :return: int. The user's id returned by the server, extracted from the message.
     """
-    login_data = username + networking.LOGIN_DATA_SEP + password
+    login_data = username + networking.DATA_SEP + password
     login_msg = networking.BDTPMessage(operation=networking.OPERATIONS['login'], status=0,
                                        data=login_data)
     server_socket.send(login_msg.pack())
