@@ -16,7 +16,7 @@ SERVER_IP = "127.0.0.1"
 SERVER_PORT = 8080
 SERVER_ADDRESS = SERVER_IP, SERVER_PORT
 DEFAULT_TIMEOUT = 2
-# The key and IV sizes according to the encryption methods (by their number)
+# The key and IV sizes according to the encryption methods (by their number):
 IV_SIZES = {
     1: 16,
     2: 8,

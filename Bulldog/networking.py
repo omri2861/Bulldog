@@ -186,20 +186,30 @@ def receive_full_message(receiving_socket):
     return msg
 
 
-class BulldogSocket(socket.socket):
+class BulldogSocket(object):
     """
     This class allows an easy api usage for an encrypted socket which works with the BDTP protocol, while using the
     socket.socket api.
     This allows full encapsulation for the security (encrypted communication).
     """
-    def __init__(self, *args, *kwargs):
-        super(BulldogSocket, self).__init__(args, kwargs)
+    def __init__(self):
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._encryption_suite = None
         self._decryption_suite = None
 
+        self.is_server = False
+        self.client = None
+        self.client_address = None
+
+        socket_callables = [attr for attr in dir(self._sock) if
+                            callable(self._sock.__getattribute__(attr))and '__' not in attr and
+                            attr not in('send', 'recv', 'accept', 'connect')]
+        for func_name in socket_callables:
+            self.__setattr__(func_name, self._sock.__getattribute__(func_name))
+
     def connect(self, address):
         # First, connect to the given address:
-        super(BulldogSocket, self).connect(address)
+        self._sock.connect(address)
 
         # Then, create a connection encrypted with RSA:
         random_generator = Random.new().read
@@ -207,10 +217,10 @@ class BulldogSocket(socket.socket):
 
         public_key = dumps(key.publickey())
         open_connection_msg = BDTPMessage(operation=OPERATIONS['create connection'], status=0, data=public_key)
-        super(BulldogSocket, self).send(open_connection_msg.pack())
+        self._sock.send(open_connection_msg.pack())
 
         # Finally, receive the key and iv and create the encryption and decryption suites:
-        raw_response = super(BulldogSocket, self).recv(BAND_WIDTH)
+        raw_response = self._sock.recv(BAND_WIDTH)
         raw_response = key.decrypt((raw_response,))
         response = BDTPMessage.unpack(raw_response)
         aes_data = response.get_data()
@@ -220,8 +230,9 @@ class BulldogSocket(socket.socket):
 
     def accept(self):
         # First, receive the connecting user
-        conn, addr = super(BulldogSocket, self).accept()
-        raw_request = conn.recv(BAND_WIDTH)
+        self.client, self.client_address = self._sock.accept()
+        self.is_server = True
+        raw_request = self.client.recv(BAND_WIDTH)
         request = BDTPMessage.unpack(raw_request)
         
         # Extract the public key that the user generated:
@@ -232,15 +243,21 @@ class BulldogSocket(socket.socket):
         # Send the encrypted private key:
         accepting_msg = BDTPMessage(operation=OPERATIONS['create connection'], status=0,
                                     data=aes_iv + DATA_SEP + aes_key)
-        accepting_msg = public_key.encrypt(accepting_msg.pack(), 57)  # 57 is meaningless
-        super(BulldogSocket, self).send(accepting_msg.pack())
+        accepting_msg = public_key.encrypt(accepting_msg.pack(), 57)[0]  # 57 is meaningless
+        self.client.send(accepting_msg)
         self._encryption_suite = AES.new(aes_key, AES.MODE_CBC, aes_iv)
         self._decryption_suite = AES.new(aes_key, AES.MODE_CBC, aes_iv)
 
     def send(self, msg):
-        super(BulldogSocket, self).send(self._encryption_suite.encrypt(msg))
+        if self.is_server:
+            self.client.send(self._encryption_suite.encrypt(msg))
+        else:
+            self._sock.send(self._encryption_suite.encrypt(msg))
 
-    def recv(self):
-        cipher = super(BulldogSocket, self).recv(1024)
+    def recv(self, n_bytes):
+        if self.is_server:
+            cipher = self.client.recv(n_bytes)
+        else:
+            cipher = self._sock.recv(n_bytes)
         text = self._decryption_suite.decrypt(cipher)
         return text
