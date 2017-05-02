@@ -17,6 +17,8 @@ SOCKET_TIMEOUT_WARNING = "The socket was timed out. If this repeats itself, it's
                          "once than it could just be timing problems, and thats just what this warning is for."
 SOCKET_ERROR_WARNING = "The socket had an error. If this repeats itself, it's a problem, but if it only happens once " \
                        "than it could just be timing problems."
+SELECT_TIMEOUT = 0.7
+ROUND_TIME = 1
 
 
 class ActiveClient(object):
@@ -52,7 +54,7 @@ users.
         """
         if isinstance(other, type(self)):
             return self.socket == other.socket and self.id == other.id
-        elif isinstance(other, socket.socket):
+        elif isinstance(other, networking.BulldogSocket):
             return self.socket == other
         elif isinstance(other, str):
             return other == str(self.id)
@@ -210,27 +212,47 @@ def main():
     them.
     :return: None
     """
-    logged_in_users = []
-    active_sockets = []
     # TODO: Create the inactive users deletion thread
     time.clock()
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket = networking.BulldogSocket()
     server_socket.bind(('0.0.0.0', 8080))
     server_socket.listen(MAX_CLIENTS)
+    logged_in_users = []
+    active_sockets = [server_socket]
 
     running = True
     while running:
-        readable, writable, excepted = select.select([server_socket] + active_sockets, active_sockets, active_sockets)
-        for sock in excepted:
+        sleep(ROUND_TIME)
+        print "Extracted real socket"
+        real_sockets = [bulldog_sock.get_real_socket() for bulldog_sock in active_sockets]
+        print "Selecting...\n.\n.\n.\n.\n.\n.\n.\n"
+        readable, writable, excepted = select.select(real_sockets, real_sockets, real_sockets,
+                                                     SELECT_TIMEOUT)
+        readable_indices = [active_sockets.index(real) for real in readable]
+        excepted_indices = [active_sockets.index(real) for real in excepted]
+        print "Readable: ",
+        print readable_indices
+        print "Excepted: ",
+        print excepted_indices
+        print "Extracted Indices, Starting work."
+        for index in excepted_indices:
+            "Some socket had an error."
+            sock = active_sockets[index]
             logged_in_users.remove(sock)
             active_sockets.remove(sock)
-        for sock in readable:
+        for index in readable_indices:
+            sock = active_sockets[index]
             if sock is not server_socket:
+                print "Handling received message:"
                 threading.Thread(target=receive_and_handle_message,
                                  args=(sock, logged_in_users, active_sockets)).start()
             else:
+                print "Accepting a new one to the family."
                 new_client, client_address = server_socket.accept()
                 active_sockets.append(new_client)
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print "Ended due to keyboard interrupt"

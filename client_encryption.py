@@ -15,7 +15,7 @@ This is the program which should be executed when the client selects a few files
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 8080
 SERVER_ADDRESS = SERVER_IP, SERVER_PORT
-DEFAULT_TIMEOUT = 2
+DEFAULT_TIMEOUT = 5
 # The key and IV sizes according to the encryption methods (by their number):
 IV_SIZES = {
     1: 16,
@@ -80,7 +80,7 @@ expected to return its result pickled through the parent input instead of a retu
     :param parent_input: A writable buffer. The function will return it's result through this buffer.
     :return: None. The result is sent through the parent input, as login data in the same format of BDTPMessage.
     """
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket = networking.BulldogSocket()
     server_socket.connect(SERVER_ADDRESS)
 
     app = QtGui.QApplication(sys.argv)
@@ -103,6 +103,7 @@ expected to return its result pickled through the parent input instead of a retu
         parent_input.close()
     else:
         parent_input.send("")
+        parent_input.close()
 
 
 def start_login_subprocess():
@@ -153,7 +154,7 @@ def main():
     config_window.start()
 
     # perform the actions which doesn't depend on the configuration window- create a connection:
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server = networking.BulldogSocket()
     server.settimeout(DEFAULT_TIMEOUT)
     try:
         server.connect(SERVER_ADDRESS)
@@ -164,7 +165,7 @@ def main():
         # TODO: Handle server disconnection.
 
     # TODO: Open an AES stream using RSA:
-    pass
+    print "Connected to server"
 
     # Receive the task object:
     task = parent_conn.recv()

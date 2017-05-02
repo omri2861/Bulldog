@@ -24,9 +24,10 @@ BAD_DATA_SIZE_MSG = "It's impossible that the _size of the data is smaller than 
                          "with the client or server."
 BAND_WIDTH = 1024
 DATA_SEP = '\r\n'
-BAD_STRING_WARNING = "Warning: Empty string given. This could happen because of timing issues, but if re-occurs, search" \
-                  "for a bug."
-
+BAD_STRING_WARNING = "Warning: Empty string given. This could happen because of timing issues, but if re-occurs," \
+                     " search for a bug."
+PAD = '\x00'
+PAD_START = '\xff'
 
 class EncryptedFile(object):
     """
@@ -186,24 +187,63 @@ def receive_full_message(receiving_socket):
     return msg
 
 
+def add_padding(text):
+    """
+    Adds padding to the given string so that it's length is dividable by 16 and can be encrypted.
+    :param text: str. The string which should be padded
+    :return: str. The string with padding.
+    """
+    padding_length = 16 - (len(text) % 16)
+    if padding_length == 0:
+        return text
+    padded_text = text + PAD_START
+    padding_length -= 1
+    while padding_length != 0:
+        padded_text += '\x00'
+        padding_length -= 1
+    return padded_text
+
+def remove_padding(padded_text):
+    """
+    This function will remove padding from a message which was padded before sent.
+    :param padded_text: str. The padded text.
+    :return: str. The text without the padding.
+    """
+    text = padded_text.rstrip(PAD)
+    text = text[:-1]
+    return text
+
+
 class BulldogSocket(object):
     """
     This class allows an easy api usage for an encrypted socket which works with the BDTP protocol, while using the
     socket.socket api.
     This allows full encapsulation for the security (encrypted communication).
     """
-    def __init__(self):
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._encryption_suite = None
-        self._decryption_suite = None
+    overridden_methods = ('send', 'recv', 'accept', 'connect')
+    VALUE_ERROR_MSG = "Error: The object passed to this function is not an existing socket. "
+    PARAMETER_ERROR_MSG = "Error: If you wish to specify a socket, please specify the AES key and IV too."
 
-        self.is_server = False
-        self.client = None
-        self.client_address = None
+    def __init__(self, existing_socket=None, aes_iv=None, aes_key=None):
+        if existing_socket is None:
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._encryption_suite = None
+            self._decryption_suite = None
+
+        elif isinstance(existing_socket, socket._socketobject):
+            self._sock = existing_socket
+            if aes_iv is None or aes_key is None:
+                raise ValueError(self.PARAMETER_ERROR_MSG)
+            self._encryption_suite = AES.new(aes_key, AES.MODE_CBC, aes_iv)
+            self._decryption_suite = AES.new(aes_key, AES.MODE_CBC, aes_iv)
+
+        else:
+            raise ValueError(self.VALUE_ERROR_MSG)
 
         socket_callables = [attr for attr in dir(self._sock) if
                             callable(self._sock.__getattribute__(attr))and '__' not in attr and
-                            attr not in('send', 'recv', 'accept', 'connect')]
+                            attr not in self.overridden_methods]
+
         for func_name in socket_callables:
             self.__setattr__(func_name, self._sock.__getattribute__(func_name))
 
@@ -230,9 +270,8 @@ class BulldogSocket(object):
 
     def accept(self):
         # First, receive the connecting user
-        self.client, self.client_address = self._sock.accept()
-        self.is_server = True
-        raw_request = self.client.recv(BAND_WIDTH)
+        client, client_address = self._sock.accept()
+        raw_request = client.recv(BAND_WIDTH)
         request = BDTPMessage.unpack(raw_request)
         
         # Extract the public key that the user generated:
@@ -244,20 +283,33 @@ class BulldogSocket(object):
         accepting_msg = BDTPMessage(operation=OPERATIONS['create connection'], status=0,
                                     data=aes_iv + DATA_SEP + aes_key)
         accepting_msg = public_key.encrypt(accepting_msg.pack(), 57)[0]  # 57 is meaningless
-        self.client.send(accepting_msg)
-        self._encryption_suite = AES.new(aes_key, AES.MODE_CBC, aes_iv)
-        self._decryption_suite = AES.new(aes_key, AES.MODE_CBC, aes_iv)
+        client.send(accepting_msg)
+
+        return BulldogSocket(client, aes_iv, aes_key), client_address
 
     def send(self, msg):
-        if self.is_server:
-            self.client.send(self._encryption_suite.encrypt(msg))
-        else:
-            self._sock.send(self._encryption_suite.encrypt(msg))
+        msg = add_padding(msg)
+        self._sock.send(self._encryption_suite.encrypt(msg))
 
     def recv(self, n_bytes):
-        if self.is_server:
-            cipher = self.client.recv(n_bytes)
-        else:
-            cipher = self._sock.recv(n_bytes)
+        cipher = self._sock.recv(n_bytes)
         text = self._decryption_suite.decrypt(cipher)
+        text = remove_padding(text)
         return text
+
+    def __eq__(self, other):
+        if isinstance(other, BulldogSocket):
+            return self._sock == other._sock
+        elif isinstance(other, socket._socketobject):
+            return self._sock == other
+        else:
+            return False
+
+    def get_real_socket(self):
+        """
+        This method should return the actual socket object which is used to send the data.
+        Warning: This should not be used to send data!!! This method is solely made for select.select function, which
+        only receives buffer type objects.
+        :return: socket._socketobject of the instance's socket.
+        """
+        return self._sock
