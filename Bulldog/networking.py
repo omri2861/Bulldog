@@ -29,6 +29,7 @@ BAD_STRING_WARNING = "Warning: Empty string given. This could happen because of 
 PAD = '\x00'
 PAD_START = '\xff'
 
+
 class EncryptedFile(object):
     """
 This class will represent a file which should be encrypted by the client. The client will use this class to send the
@@ -159,34 +160,6 @@ The class' properties are identical to the Protocol's fields:
         return self._size
 
 
-def receive_full_message(receiving_socket):
-    """
-    This function will receive the full message from the given socket. It will update the msg object.
-    :param receiving_socket: socket.socket. The socket which sent the message.
-    :return: The message as a BTDPMessage object.
-    """
-    msg = receiving_socket.recv(BAND_WIDTH)
-    msg = BDTPMessage.unpack(msg)
-
-    if msg is None:
-        return None
-
-    full_data = msg.get_data()
-    if msg.get_size() == len(full_data):
-        return msg
-    elif msg.get_size() < len(full_data):
-        raise ValueError(BAD_DATA_SIZE_MSG)
-
-    missing_data_size = msg.get_size() - len(full_data)
-    while missing_data_size > 0:
-        chunk = receiving_socket.recv(BAND_WIDTH)
-        full_data += chunk
-        missing_data_size -= len(chunk)
-
-    msg.set_data(full_data)
-    return msg
-
-
 def add_padding(text):
     """
     Adds padding to the given string so that it's length is dividable by 16 and can be encrypted.
@@ -203,6 +176,7 @@ def add_padding(text):
         padding_length -= 1
     return padded_text
 
+
 def remove_padding(padded_text):
     """
     This function will remove padding from a message which was padded before sent.
@@ -210,7 +184,8 @@ def remove_padding(padded_text):
     :return: str. The text without the padding.
     """
     text = padded_text.rstrip(PAD)
-    text = text[:-1]
+    if text[-1] == PAD_START:
+        text = text[:-1]
     return text
 
 
@@ -296,6 +271,41 @@ class BulldogSocket(object):
         text = self._decryption_suite.decrypt(cipher)
         text = remove_padding(text)
         return text
+
+    def smart_recv(self, timeout=-1):
+        """
+        This method will smartly receive a full message, strip the padding, and return a BDTPMessage object.
+        This method eases the usage of the protocol and classes.
+        Alternatively, it is still possible to use the provided recv method.
+        :param timeout: The of the message receiving.
+        :return: BDTPMessage object. The received message.
+        """
+        if timeout > 0:
+            self._sock.settimeout(timeout)
+
+        msg = self.recv(BAND_WIDTH)
+        msg = BDTPMessage.unpack(msg)
+
+        if msg is None:
+            return None
+
+        full_data = msg.get_data()
+        if msg.get_size() == len(full_data):
+            return msg
+        elif msg.get_size() < len(full_data):
+            raise ValueError(BAD_DATA_SIZE_MSG)
+
+        missing_data_size = msg.get_size() - len(full_data)
+        while missing_data_size > 0:
+            chunk = self.recv(BAND_WIDTH)
+            full_data += chunk
+            missing_data_size -= len(chunk)
+
+        msg.set_data(full_data)
+
+        self._sock.settimeout(socket.getdefaulttimeout())
+
+        return msg
 
     def __eq__(self, other):
         if isinstance(other, BulldogSocket):

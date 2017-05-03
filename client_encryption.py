@@ -1,7 +1,5 @@
 import os
 import multiprocessing
-from multiprocessing.reduction import ForkingPickler
-import StringIO
 import sys
 from PyQt4 import QtGui, QtCore
 from Bulldog import GUI, encryption, networking
@@ -134,7 +132,7 @@ def perform_login(server_socket, username, password):
     login_msg = networking.BDTPMessage(operation=networking.OPERATIONS['login'], status=0,
                                        data=login_data)
     server_socket.send(login_msg.pack())
-    server_response = networking.receive_full_message(server_socket)
+    server_response = server_socket.smart_recv()
     user_id = int(server_response.get_data())
 
     return user_id
@@ -163,9 +161,6 @@ def main():
         print "Couldn't connect to server."
         sys.exit(1)
         # TODO: Handle server disconnection.
-
-    # TODO: Open an AES stream using RSA:
-    print "Connected to server"
 
     # Receive the task object:
     task = parent_conn.recv()
@@ -201,7 +196,7 @@ def main():
                                               data=new_file.pack())
         server.send(add_file_msg.pack())
 
-        server_response = networking.receive_full_message(server)
+        server_response = server.smart_recv()
 
         file_id = int(server_response.get_data())
         encryption.encrypt_file(path, task.method, user_id, file_id, iv, key)

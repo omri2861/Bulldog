@@ -160,7 +160,7 @@ This function is built to be working as a thread in a multiclient server.
     :return: None
     """
     try:
-        request = networking.receive_full_message(client_sock)
+        request = client_sock.smart_recv()
     except socket.timeout:
         print SOCKET_TIMEOUT_WARNING
         return
