@@ -4,6 +4,7 @@ import time
 import select
 import threading
 from time import sleep
+from pickle import loads
 
 """
 This program is the main server program. It will communicate with the client and link it with the database.
@@ -19,6 +20,8 @@ SOCKET_ERROR_WARNING = "The socket had an error. If this repeats itself, it's a 
                        "than it could just be timing problems."
 SELECT_TIMEOUT = 0.7
 ROUND_TIME = 1
+DATABASE_PORT = 7091
+COMMIT = "commit"
 
 
 class ActiveClient(object):
@@ -83,33 +86,46 @@ users.
         return description
 
 
-def authenticate_user(username, password):
+def authenticate_user(username, password, database):
     """
     This function will check if the username and password are found in the database. If so,
     it will return the user id as an int. If not, it will return -1.
     :param username: str. The username of the signing in user.
     :param password: str. The password of the signing in user.
+    :param database: The loopback socket which is connected to the database operator program.
     :return: int. The id of the logged in user.
     """
-    # TODO: This function is one of the function which should be updated once the database is ready.
-    if username == 'omri2861' and password == 'omripess':
-        return 2861
-    else:
+    COMMAND = "SELECT user_id FROM users WHERE username = '%s' and user_password = '%s';"
+    database.send(COMMAND % (username, password))
+
+    response = database.recv(networking.BAND_WIDTH)  # No need to take care of any responses larger than the bandwidth,
+    # as such a large response from the database will not be sent.
+    response = loads(response)
+    if len(response) == 0:  # Meaning an empty list
         return -1
+    else:
+        user_id = response[0][0]  # First place in the first tuple of the list
+
+        response = database.recv(networking.BAND_WIDTH)  # Doesn't really matter if the commit was successfull or not.
+        # If it wasn't successfull, the database must have an error, which will be excepted and handled by the next
+        # request.
+
+        return user_id
 
 
-def perform_login(request, client_sock, logged_in_users):
+def perform_login(request, client_sock, logged_in_users, database):
     """
 This function will handle a login message and will return the response which should be sent to the client.
 
     :param request: BDTPMessage. The message sent from the client, interpreted and implanted in a BDTPMessage class.
     :param client_sock: socket.socket. The sending client's socket.
     :param logged_in_users: list. The list of the currently active users.
+    :param database: The loopback socket which is connected to the database operator program.
     :return: BTDPMessage. The response to the login request.
     """
     login_answer = networking.BDTPMessage(operation=networking.OPERATIONS['login'], status=200, data='')
     username, password = tuple(request.get_data().split(SEPERATOR))
-    user_id = authenticate_user(username, password)
+    user_id = authenticate_user(username, password, database)
     login_answer.set_data(user_id)
     # TODO: Create Error Codes
     if user_id != -1:
@@ -117,7 +133,7 @@ This function will handle a login message and will return the response which sho
     return login_answer
 
 
-def add_file_to_database(new_file, user_id):
+def add_file_to_database(new_file, user_id, database):
     """
 This function will receive a file which should be added to the database, encrypted by the user which it's id is
 given.
@@ -125,29 +141,52 @@ given.
     :param new_file: networking.EncryptedFile. The data of the file which the client requests to encrypt, represented
     by a networking.EncryptedFile object.
     :param user_id: int. The id of the user which requests to encrypt the file.
+    :param database: The loopback socket which is connected to the database operator program.
     :return: int. If the file was successfully added to the database, it's new id will be returned. If an error
     occurred, -1 will be returned.
     """
-    # TODO: Connect this function with the database
-    return 4321
+    values = (user_id, new_file.method, new_file.iv, new_file.key.encode('base64'))
+    COMMAND = "INSERT INTO files (user_id, method, iv, key) VALUES (%d, %d, '%s', '%s');"
+    CONFIRMING_COMMAND = "SELECT file_id FROM files WHERE user_id = %d and method = %d and iv = '%s' and key = '%s';"
+    database.send(COMMAND % values)
+
+    response = database.recv(networking.BAND_WIDTH)  # No need to take care of any responses larger than the bandwidth,
+    # as such a large response from the database will not be sent.
+    response = loads(response)
+
+    if response:
+        database.send(CONFIRMING_COMMAND % values)
+        response = database.recv(networking.BAND_WIDTH)
+        response = loads(response)
+        file_id = response[0][0]
+        database.send(COMMIT)
+        response = database.recv(networking.BAND_WIDTH)  # Doesn't really matter if the commit was successfull or not.
+        # If it wasn't successfull, the database must have an error, which will be excepted and handled by the next
+        # request.
+    else:
+        # TODO: Raise error: Operation not successfull
+        file_id = -1
+
+    return file_id
 
 
-def add_encrypted_file(request, user_id):
+def add_encrypted_file(request, user_id, database):
     """
 This function will take care of a request to encrypt a new file from a client.
 
     :param request: BDTPMessage object. The request sent from the client.
     :param user_id: The id of the user which requests to encrypt the file.
+    :param database: The loopback socket which is connected to the database operator program.
     :rtype: networking.BDTPMessage
     :return: The response which should be sent to the client.
     """
     encrypted_file = networking.EncryptedFile.unpack(request.get_data())
-    new_file_id = add_file_to_database(encrypted_file, user_id)
+    new_file_id = add_file_to_database(encrypted_file, user_id, database)
     return networking.BDTPMessage(operation=networking.OPERATIONS['add file'], status=0,
                                   data=new_file_id)
 
 
-def receive_and_handle_message(client_sock, logged_in_users, active_sockets):
+def receive_and_handle_message(client_sock, logged_in_users, active_sockets, database):
     """
 This function will receive the message from the readable socket given, will handle the request and finally send a
 response to the request.
@@ -157,6 +196,7 @@ This function is built to be working as a thread in a multiclient server.
     :param logged_in_users: list. The list of logged in users, each item in the list should be an ActiveClient instance
     which contains the logged in user's data.
     :param active_sockets: A list of the currently connected sockets in the server.
+    :param database: The loopback socket which is connected to the database operator program.
     :return: None
     """
     try:
@@ -177,10 +217,10 @@ This function is built to be working as a thread in a multiclient server.
     print request
 
     if request.operation == networking.OPERATIONS['login']:
-        response = perform_login(request, client_sock, logged_in_users)
+        response = perform_login(request, client_sock, logged_in_users, database)
     elif request.operation == networking.OPERATIONS['add file']:
         requesting_user = logged_in_users[logged_in_users.index(client_sock)]
-        response = add_encrypted_file(request, requesting_user.id)
+        response = add_encrypted_file(request, requesting_user.id, database)
     elif request.operation == networking.OPERATIONS['decrypt file']:
         # TODO: Take care of decrypting a file
         response = None
@@ -220,6 +260,9 @@ def main():
     logged_in_users = []
     active_sockets = [server_socket]
 
+    database = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    database.connect(('loopback', DATABASE_PORT))
+
     running = True
     while running:
         sleep(ROUND_TIME)
@@ -245,7 +288,7 @@ def main():
             if sock is not server_socket:
                 print "Handling received message:"
                 threading.Thread(target=receive_and_handle_message,
-                                 args=(sock, logged_in_users, active_sockets)).start()
+                                 args=(sock, logged_in_users, active_sockets, database)).start()
             else:
                 print "Accepting a new one to the family."
                 new_client, client_address = server_socket.accept()

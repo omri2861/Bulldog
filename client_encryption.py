@@ -92,7 +92,8 @@ expected to return its result pickled through the parent input instead of a retu
     username = window.correct_username
     password = window.correct_password
 
-    logout_msg = networking.BDTPMessage(operation=networking.OPERATIONS['logout'], status=0, data='')
+    logout_msg = networking.BDTPMessage(operation=networking.OPERATIONS['logout'],
+                                        status=networking.STATUS_CODES['request'], data='')
     server_socket.send(logout_msg.pack())
     server_socket.close()
 
@@ -129,8 +130,8 @@ def perform_login(server_socket, username, password):
     :return: int. The user's id returned by the server, extracted from the message.
     """
     login_data = username + networking.DATA_SEP + password
-    login_msg = networking.BDTPMessage(operation=networking.OPERATIONS['login'], status=0,
-                                       data=login_data)
+    login_msg = networking.BDTPMessage(operation=networking.OPERATIONS['login'],
+                                       status=networking.STATUS_CODES['request'],data=login_data)
     server_socket.send(login_msg.pack())
     server_response = server_socket.smart_recv()
     user_id = int(server_response.get_data())
@@ -192,8 +193,8 @@ def main():
         key = os.urandom(KEY_SIZES[task.method])
         new_file = networking.EncryptedFile(task.method, iv, key)
 
-        add_file_msg = networking.BDTPMessage(operation=networking.OPERATIONS['add file'], status=0,
-                                              data=new_file.pack())
+        add_file_msg = networking.BDTPMessage(operation=networking.OPERATIONS['add file'],
+                                              status=networking.STATUS_CODES['request'], data=new_file.pack())
         server.send(add_file_msg.pack())
 
         server_response = server.smart_recv()
@@ -205,7 +206,8 @@ def main():
     pass
 
     # Logout from the server:
-    logout_msg = networking.BDTPMessage(operation=networking.OPERATIONS['logout'], status=0, data='')
+    logout_msg = networking.BDTPMessage(operation=networking.OPERATIONS['logout'],
+                                        status=networking.STATUS_CODES['request'], data='')
     server.send(logout_msg.pack())
     server.close()
 

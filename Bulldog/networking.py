@@ -17,6 +17,13 @@ OPERATIONS = {
     "decrypt file": "DEC\x00",
     "create connection": "CON\x00"
 }
+STATUS_CODES = {
+    "request": 0,
+    "OK": 200,
+    "internal server error": 500,
+    "bad data": 400,
+    "bad protocol usage": 505
+}
 BAD_METHOD_MSG = "Invalid method: Method should be a number in the range of 1-3."
 BAD_STRING_MSG = "This is not a BDTP Message. Note: It is likely that the message is an empty string due to " \
                              "a server error and the socket short timeout."
@@ -231,7 +238,8 @@ class BulldogSocket(object):
         key = RSA.generate(1024, random_generator)
 
         public_key = dumps(key.publickey())
-        open_connection_msg = BDTPMessage(operation=OPERATIONS['create connection'], status=0, data=public_key)
+        open_connection_msg = BDTPMessage(operation=OPERATIONS['create connection'], status=STATUS_CODES['request'],
+                                          data=public_key)
         self._sock.send(open_connection_msg.pack())
 
         # Finally, receive the key and iv and create the encryption and decryption suites:
@@ -255,7 +263,7 @@ class BulldogSocket(object):
         aes_iv = '0' * 16  # AES Block length: 16
         
         # Send the encrypted private key:
-        accepting_msg = BDTPMessage(operation=OPERATIONS['create connection'], status=0,
+        accepting_msg = BDTPMessage(operation=OPERATIONS['create connection'], status=STATUS_CODES['OK'],
                                     data=aes_iv + DATA_SEP + aes_key)
         accepting_msg = public_key.encrypt(accepting_msg.pack(), 57)[0]  # 57 is meaningless
         client.send(accepting_msg)
