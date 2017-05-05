@@ -7,13 +7,13 @@ from pickle import dumps, loads
 import socket
 
 """
-This is the program which should be executed when the client selects a few files and wants to encrypt them with bulldog.
+This is the main encryption program of Bulldog. It should be launched when the user wants to encrypt file/s.
 """
 
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 8080
 SERVER_ADDRESS = SERVER_IP, SERVER_PORT
-DEFAULT_TIMEOUT = 5
+DEFAULT_TIMEOUT = socket.getdefaulttimeout()
 # The key and IV sizes according to the encryption methods (by their number):
 IV_SIZES = {
     1: 16,
@@ -131,7 +131,7 @@ def perform_login(server_socket, username, password):
     """
     login_data = username + networking.DATA_SEP + password
     login_msg = networking.BDTPMessage(operation=networking.OPERATIONS['login'],
-                                       status=networking.STATUS_CODES['request'],data=login_data)
+                                       status=networking.STATUS_CODES['request'], data=login_data)
     server_socket.send(login_msg.pack())
     server_response = server_socket.smart_recv()
     user_id = int(server_response.get_data())

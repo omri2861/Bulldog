@@ -106,6 +106,7 @@ def authenticate_user(username, password, database):
     else:
         user_id = response[0][0]  # First place in the first tuple of the list
 
+        database.send(COMMIT)
         response = database.recv(networking.BAND_WIDTH)  # Doesn't really matter if the commit was successfull or not.
         # If it wasn't successfull, the database must have an error, which will be excepted and handled by the next
         # request.
@@ -123,7 +124,8 @@ This function will handle a login message and will return the response which sho
     :param database: The loopback socket which is connected to the database operator program.
     :return: BTDPMessage. The response to the login request.
     """
-    login_answer = networking.BDTPMessage(operation=networking.OPERATIONS['login'], status=200, data='')
+    login_answer = networking.BDTPMessage(operation=networking.OPERATIONS['login'],
+                                          status=networking.STATUS_CODES['OK'], data='')
     username, password = tuple(request.get_data().split(SEPERATOR))
     user_id = authenticate_user(username, password, database)
     login_answer.set_data(user_id)
@@ -150,17 +152,17 @@ given.
     CONFIRMING_COMMAND = "SELECT file_id FROM files WHERE user_id = %d and method = %d and iv = '%s' and key = '%s';"
     database.send(COMMAND % values)
 
-    response = database.recv(networking.BAND_WIDTH)  # No need to take care of any responses larger than the bandwidth,
+    result = database.recv(networking.BAND_WIDTH)  # No need to take care of any responses larger than the bandwidth,
     # as such a large response from the database will not be sent.
-    response = loads(response)
+    result = loads(result)
 
-    if response:
+    if result:
         database.send(CONFIRMING_COMMAND % values)
-        response = database.recv(networking.BAND_WIDTH)
-        response = loads(response)
-        file_id = response[0][0]
+        result = database.recv(networking.BAND_WIDTH)
+        result = loads(result)
+        file_id = result[0][0]
         database.send(COMMIT)
-        response = database.recv(networking.BAND_WIDTH)  # Doesn't really matter if the commit was successfull or not.
+        result = database.recv(networking.BAND_WIDTH)  # Doesn't really matter if the commit was successfull or not.
         # If it wasn't successfull, the database must have an error, which will be excepted and handled by the next
         # request.
     else:
@@ -184,6 +186,55 @@ This function will take care of a request to encrypt a new file from a client.
     new_file_id = add_file_to_database(encrypted_file, user_id, database)
     return networking.BDTPMessage(operation=networking.OPERATIONS['add file'], status=0,
                                   data=new_file_id)
+
+
+def get_file_info_from_database(file_id, user_id, database):
+    """
+
+    :param file_id:
+    :param user_id:
+    :param database: The loopback socket which is connected to the database operator program.
+    :return:
+    """
+    COMMAND = "SELECT method, iv, key FROM files WHERE user_id = %d and file_id = %d;"
+    database.send(COMMAND % (user_id, file_id))
+
+    result = database.recv(networking.BAND_WIDTH)  # Doesn't really matter if the commit was successfull or not.
+    # If it wasn't successfull, the database must have an error, which will be excepted and handled by the next request.
+    result = loads(result)
+    print repr(result)
+    method, iv, key = result[0]
+    key = str(key)  # decode it from unicode to ascii string
+    iv = str(iv)  # same for the iv
+    key = key.decode('base64')  # Then from base64. This one is only necessary for the key
+
+    print repr((method, iv, key))
+
+    return networking.EncryptedFile(method, iv, key)
+
+
+def extract_file_info(request, user, database):
+    """
+    This function will create a response for a user which requests to decrypt a file. It will give the user the required
+    information to so, if the user gained permission.
+    :param request: networking.BDTPMessage object. The request which was received from the user.
+    :param user: The ActiveClient object which matches the socket, to check that the requesting user has the permission
+    to perform the operation.
+    :param database: The loopback socket which is connected to the database operator program.
+    :return: networking.BDTPMessage object. The response for the user.
+    """
+    requester_id, file_id = tuple(request.get_data().split(networking.DATA_SEP))
+    requester_id = int(requester_id)
+    file_id = int(file_id)
+    if requester_id != user.id:
+        response = networking.BDTPMessage(networking.OPERATIONS['decrypt file'],
+                                          networking.STATUS_CODES['unauthorized'], data="")
+    else:
+        file_info = get_file_info_from_database(file_id, user.id, database)
+        response = networking.BDTPMessage(networking.OPERATIONS['decrypt file'], networking.STATUS_CODES['OK'],
+                                          data=file_info.pack())
+
+    return response
 
 
 def receive_and_handle_message(client_sock, logged_in_users, active_sockets, database):
@@ -222,9 +273,8 @@ This function is built to be working as a thread in a multiclient server.
         requesting_user = logged_in_users[logged_in_users.index(client_sock)]
         response = add_encrypted_file(request, requesting_user.id, database)
     elif request.operation == networking.OPERATIONS['decrypt file']:
-        # TODO: Take care of decrypting a file
-        response = None
-        pass
+        requesting_user = logged_in_users[logged_in_users.index(client_sock)]
+        response = extract_file_info(request, requesting_user, database)
     elif request.operation == networking.OPERATIONS['logout']:
         client_sock.close()
         logged_in_users.remove(client_sock)

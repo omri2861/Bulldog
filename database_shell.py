@@ -35,7 +35,6 @@ def main():
             break
 
         if type(response) is list:
-            print repr(response)
             for row in response:
                 print COLUMN_SEPARATOR.join([str(item) for item in row])
         elif type(response) is str:

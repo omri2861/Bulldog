@@ -22,7 +22,9 @@ STATUS_CODES = {
     "OK": 200,
     "internal server error": 500,
     "bad data": 400,
-    "bad protocol usage": 505
+    "bad protocol usage": 505,
+    "unauthorized": 409,
+    "inactivity logout": 509
 }
 BAD_METHOD_MSG = "Invalid method: Method should be a number in the range of 1-3."
 BAD_STRING_MSG = "This is not a BDTP Message. Note: It is likely that the message is an empty string due to " \

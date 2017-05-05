@@ -2,6 +2,7 @@ from Crypto.Cipher import AES
 from Crypto.Cipher import Blowfish
 from Crypto.Cipher import _DES as DES
 import os
+import struct
 
 __author__ = "Omri Levy"
 
@@ -20,11 +21,10 @@ MODE_BLOWFISH = 2
 MODE_TDES = 3
 CHUNK_SIZE = 256
 PADDING = '\x00'
-INFO_TEMPLATE = "iv:%s\r\nkey:%s\r\n"
 ENCRYPTED_FILE_ENDING = ".bef"
-MAGIC_NUMBER = bytearray(b'\x02\x86')
-EMPTY_ID = bytearray(4)
-HEADERS_SIZE = 10
+MAGIC_NUMBER = 0x286
+HEADERS_FORMAT = "hxxixxi"
+HEADER_SIZE = 16
 
 # TODO: Remove testing when done.
 
@@ -130,7 +130,7 @@ def add_padding(text, block_size=16):
     return padded_text
 
 
-def get_file_headers(user_id, file_id):
+def get_file_header(user_id, file_id):
     """
     This function will receive the raw file_id and user_id numbers and will return a byte array of the encrypted file
     headers which could be written directly into the file.
@@ -138,23 +138,7 @@ def get_file_headers(user_id, file_id):
     :param file_id: int. The file id number.
     :return: byte array. The headers which should be written to the encrypted file.
     """
-    user_id_bytes = bytearray(EMPTY_ID)  # copy the byte array
-    file_id_bytes = bytearray(EMPTY_ID)  # copy the byte array
-
-    index = len(user_id_bytes) - 1
-    while user_id != 0:
-        user_id_bytes[index] = user_id % 256
-        user_id /= 256
-        index -= 1
-
-    index = len(file_id_bytes) - 1
-    while file_id != 0:
-        file_id_bytes[index] = file_id % 256
-        file_id /= 256
-        index -= 1
-    headers = bytearray(MAGIC_NUMBER)  # copy the byte array
-    headers += user_id_bytes + file_id_bytes
-    return headers
+    return struct.pack(HEADERS_FORMAT, MAGIC_NUMBER, user_id, file_id)
 
 
 def encrypt_file(file_path, method, user_id, file_id, iv=None, key=None):
@@ -183,17 +167,39 @@ Note: This function does not delete the original decrypted file.
         suite = Suite(method)
 
     with open(out_file, mode='wb') as output:
-        headers = get_file_headers(user_id, file_id)
+        headers = get_file_header(user_id, file_id)
         output.write(headers)
         with open(file_path, mode='rb') as input_file:
             chunk = input_file.read(CHUNK_SIZE)
             while len(chunk) != 0:
-                chunk = add_padding(chunk, suite.BLOCK_SIZE)
+                if len(chunk) < CHUNK_SIZE:
+                    chunk = add_padding(chunk, suite.BLOCK_SIZE)
                 cipher = suite.encrypt(chunk)
                 output.write(cipher)
                 chunk = input_file.read(CHUNK_SIZE)
 
     return suite.get_iv_and_key()
+
+
+def scan_file_header(file_path):
+    """
+    This function will return the file id and user id as saved in the server.
+    :param file_path: The path to the file which should be read.
+    :return: tuple(user_id, file_id). Both are of type int. If the operation wasn't successfull, both numbers will be
+    set to -1.
+    """
+    operation_failed = (-1, -1)
+    if not (os.path.isfile(file_path) and file_path.endswith(ENCRYPTED_FILE_ENDING)):
+        return operation_failed
+
+    input_file = open(file_path, 'rb')
+    magic_number, user_id, file_id = struct.unpack(HEADERS_FORMAT, input_file.read(HEADER_SIZE))
+    input_file.close()
+
+    if MAGIC_NUMBER != magic_number:
+        return operation_failed
+
+    return user_id, file_id
 
 
 def decrypt_file(filename, method, iv, key):
@@ -211,9 +217,12 @@ def decrypt_file(filename, method, iv, key):
 
     with open(filename, mode='rb') as input_file:
         with open(out_file, mode='wb') as output:
+            input_file.read(HEADER_SIZE)  # Getting rid of the unneeded header
             chunk = input_file.read(CHUNK_SIZE)
             while len(chunk) != 0:
                 cipher = suite.decrypt(chunk)
                 cipher = cipher.rstrip(PADDING)
                 output.write(cipher)
                 chunk = input_file.read(CHUNK_SIZE)
+
+    # TODO: Strip padding
