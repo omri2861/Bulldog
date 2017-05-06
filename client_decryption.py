@@ -1,7 +1,5 @@
-from Bulldog import networking, GUI, encryption
-import sys
-import os
-import multiprocessing
+from Bulldog import encryption
+from Bulldog.client_functions import *
 
 """
 This is the main decryption program of Bulldog. It should be launched when the user wants to decrypt file/s.
@@ -11,27 +9,16 @@ This is the main decryption program of Bulldog. It should be launched when the u
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 8080
 SERVER_ADDRESS = SERVER_IP, SERVER_PORT
-DEFAULT_TIMEOUT = 5
+DEFAULT_TIMEOUT = 2
 ENCRYPTED_FILES_ENDING = ".bef"
-
-
-def get_directory_files_list(dir_path):
-    """
-The function will iterate over all of the files and subdirectories in the given path, and will return a list of all
-the files it contains and its sub directories. If the given path is a file, it will be returned in a list.
-    :param dir_path: The path of the directory which should be listed.
-    :return: A list of strings containing the directory's files' full path.
-    """
-    result = []
-    if os.path.isfile(dir_path):
-        return [dir_path]
-    for file_name in os.listdir(dir_path):
-        file_path = os.path.join(dir_path, file_name)
-        if os.path.isdir(file_path):
-            result += get_directory_files_list(file_path)
-        else:
-            result.append(file_path)
-    return result
+MAX_CONNECTION_ATTEMPTS = 5
+WRONG_USER_TEXT = "You logged successfully to the system, but you are not the user who encrypted this file(s).\n" \
+                   "Please login as the user who encrypted this file(s)."
+WRONG_USER_TITLE = "Bulldog- Wrong User"
+NO_IDENTICAL_ID_TEXT = "Not all of the files selected were encrypted by the same user.\nPlease only decrypt files in " \
+                       "groups which are encrypted by the same user."
+DECRYPTING_FILES_MSG = "Decrypting files..."
+NO_IDENETICAL_ID_TITLE = "Bulldog- Error"
 
 
 def find_username_and_password(parent_input, encrypter_id):
@@ -44,69 +31,85 @@ expected to return its result pickled through the parent input instead of a retu
     :param encrypter_id: The id of the user which encrypted the file as saved in the server.
     :return: None. The result is sent through the parent input, as login data in the same format of BDTPMessage.
     """
-    server_socket = networking.BulldogSocket()
-    server_socket.connect(SERVER_ADDRESS)
-
+    server_socket = connect_to_server(CONNECTING_TO_SERVER_TEXT)
     app = GUI.QtGui.QApplication(sys.argv)
 
     window = GUI.LoginWindow(server_socket)
-    window.show()
+    window.exec_()
 
-    app.exec_()
+    user_id = window.user_id
 
-    username = window.correct_username
-    password = window.correct_password
+    if user_id == encrypter_id:
+        login_data = window.correct_username + networking.DATA_SEP + window.correct_password
+    elif user_id != -1:
+        while user_id != -1 and user_id != encrypter_id:
+            message = GUI.create_popup_message_box(text=WRONG_USER_TEXT, title=WRONG_USER_TITLE)
+            message.exec_()
+            window = GUI.LoginWindow(server_socket)
+            window.exec_()
+            user_id = window.user_id
+
+        if user_id == -1:
+            login_data = "-1" + networking.DATA_SEP + "-1"
+        else:
+            login_data = window.correct_username + networking.DATA_SEP + window.correct_password
+    else:
+        login_data = "-1" + networking.DATA_SEP + "-1"
 
     logout_msg = networking.BDTPMessage(operation=networking.OPERATIONS['logout'],
                                         status=networking.STATUS_CODES['request'], data='')
     server_socket.send(logout_msg.pack())
     server_socket.close()
 
-    if window.user_id == encrypter_id:
-        parent_input.send(username + networking.DATA_SEP + password)
-        parent_input.close()
-    elif window.user_id != -1:
-        # TODO: handle wrong user login
-        print "Logged in to the system, but not as the person who encrypted."
-        find_username_and_password(parent_input, encrypter_id)
-    else:
-        parent_input.send("")
-        parent_input.close()
+    parent_input.send(login_data)
+    parent_input.close()
 
 
-def start_login_subprocess(user_id):
+def find_files_encrypter_id(paths):
     """
-    This function will start the find_username_and_password function as a different subprocess.
-    :param user_id: int. The id of the user which locked the files which should be decrypted.
-    :return: int. The user id if logged in successfully. -1 if an error occurred or the user chose to abort the task.
+    This function will find the id of the user which encrypted the selected file/s.
+    :param paths: A list of the file paths which should be decrypted.
+    :type paths: list of str.
+    :return: The id of the user which encrypted the given files. Note: If given an empty directory, the function will
+    return 0. If there isn't one, identical id for all files the function will return -1.
+    :rtype: int
     """
-    child_conn, parent_conn = multiprocessing.Pipe(duplex=True)
-    login_subprocess = multiprocessing.Process(target=find_username_and_password, args=(child_conn, user_id))
-    login_subprocess.start()
+    if len(paths) == 0:
+        return -1
 
-    login_subprocess.join()
+    first_user_id, first_file_id = encryption.scan_file_header(paths[0])
 
-    login_data = parent_conn.recv()
-    username, password = tuple(login_data.split(networking.DATA_SEP))
-    return username, password
+    if len(paths) == 1:
+        return first_user_id
+
+    for path in paths[1:]:
+        user_id, file_id = encryption.scan_file_header(path)
+        if user_id != first_user_id:
+            return -1
+
+    return first_user_id
 
 
-def perform_login(server_socket, username, password):
+@GUI.blocking_operation
+def decrypt_files(paths_to_decrypt, user_id, server):
     """
-    This function will send a login message to the server and will return the user's id as a result.
-    :param server_socket: The socket of the server which should be logged in to.
-    :param username: The username of the user.
-    :param password: The password of the user.
-    :return: int. The user's id returned by the server, extracted from the message.
-    """
-    login_data = username + networking.DATA_SEP + password
-    login_msg = networking.BDTPMessage(operation=networking.OPERATIONS['login'],
-                                       status=networking.STATUS_CODES['request'],data=login_data)
-    server_socket.send(login_msg.pack())
-    server_response = server_socket.smart_recv()
-    user_id = int(server_response.get_data())
 
-    return user_id
+    :param paths_to_decrypt:
+    :param user_id:
+    :param server:
+    :return:
+    """
+    for file_path in paths_to_decrypt:
+        encrypter_id, file_id = encryption.scan_file_header(file_path)
+        request_data = "%d%s%d" % (user_id, networking.DATA_SEP, file_id)
+        decryption_request = networking.BDTPMessage(networking.OPERATIONS['decrypt file'],
+                                                    status=networking.STATUS_CODES['request'], data=request_data)
+        server.send(decryption_request.pack())
+        response = server.smart_recv()
+        file_info = networking.EncryptedFile.unpack(response.get_data())
+        encryption.decrypt_file(file_path, file_info.method, file_info.iv, file_info.key)
+
+        os.remove(file_path)
 
 
 def main():
@@ -116,25 +119,21 @@ def main():
     """
     paths_to_decrypt = [path for path in get_directory_files_list(sys.argv[1]) if path.endswith(ENCRYPTED_FILES_ENDING)]
 
-    # TODO: Make sure all files has the same user_id
-    user_id, file_id = encryption.scan_file_header(paths_to_decrypt[0])
+    encrypter_id = find_files_encrypter_id(paths_to_decrypt)
+    if encrypter_id == -1:
+        GUI.launch_popup_message_box(text=NO_IDENTICAL_ID_TEXT, title=NO_IDENETICAL_ID_TITLE)
 
-    username, password = start_login_subprocess(user_id)
+    # Find the username of the user which encrypted the files
+    username, password = start_login_subprocess(find_username_and_password, encrypter_id)
+    if username == "-1":
+        sys.exit(1)
 
-    server = networking.BulldogSocket()
-    server.connect(SERVER_ADDRESS)
+    server = connect_to_server(CONNECTING_TO_SERVER_TEXT)
 
     user_id = perform_login(server, username, password)
 
-    for file_path in paths_to_decrypt:
-        user_id, file_id = encryption.scan_file_header(file_path)
-        request_data = "%d%s%d" % (user_id, networking.DATA_SEP, file_id)
-        decryption_request = networking.BDTPMessage(networking.OPERATIONS['decrypt file'],
-                                                    status=networking.STATUS_CODES['request'], data=request_data)
-        server.send(decryption_request.pack())
-        response = server.smart_recv()
-        file_info = networking.EncryptedFile.unpack(response.get_data())
-        encryption.decrypt_file(file_path, file_info.method, file_info.iv, file_info.key)
+    # Decrypt the selected files:
+    decrypt_files(DECRYPTING_FILES_MSG, paths_to_decrypt, user_id, server)
 
     # Logout from the server:
     logout_msg = networking.BDTPMessage(operation=networking.OPERATIONS['logout'],
@@ -142,9 +141,8 @@ def main():
     server.send(logout_msg.pack())
     server.close()
 
-
-
-
-
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        exit(-1)

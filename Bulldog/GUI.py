@@ -22,7 +22,6 @@ from threading import Thread
 try:
     _fromUtf8 = QtCore.QString.fromUtf8
 except AttributeError:
-
     def _fromUtf8(s):
         return s
 
@@ -59,6 +58,10 @@ MODE_TDES = 3
 # LoginWindow constants:
 LOGIN_FAILED_TITLE = "Login Failed"
 LOGIN_FAILED_TEXT = "Wrong username or password.\nPlease try again."
+DEFAULT_INFO_WINDOW_TITLE = "Information"
+EXCEPTION_DISPLAYING_FORMAT = "Exception of type %s\nOn file %s, in function %s, at line %d:\n\n%s"
+OPERATION_WINDOW_TEXT = "%s\nPlease do not close the program or turn of the system..."
+OPERATION_WINDOW_TITLE = "Please wait..."
 
 
 def login_failed_popup():
@@ -75,6 +78,131 @@ def login_failed_popup():
     popup.setText(_fromUtf8(LOGIN_FAILED_TEXT))
 
     popup.exec_()
+
+
+def create_popup_message_box(**kwargs):
+    """
+    This function will create a QMessageBox object which will display a message for the user.
+    :param kwargs: The message box's properties.
+    :return: QMessageBox object with the given properties.
+    """
+    popup = QtGui.QMessageBox()
+
+    given_properties = kwargs.keys()
+    if 'title' in given_properties:
+        popup.setWindowTitle(_fromUtf8(kwargs['title']))
+    else:
+        popup.setWindowTitle(DEFAULT_INFO_WINDOW_TITLE)
+
+    if 'buttons' in given_properties:
+        popup.setStandardButtons(kwargs['buttons'])
+    else:
+        popup.setStandardButtons(QtGui.QMessageBox.Ok)
+
+    if 'icon' in given_properties:
+        popup.setIcon(kwargs['icon'])
+    else:
+        popup.setIcon(QtGui.QMessageBox.Information)
+
+    if 'text' in given_properties:
+        popup.setText(_fromUtf8(kwargs['text']))
+
+    if 'details' in given_properties:
+        popup.setDetailedText(_fromUtf8(kwargs['details']))
+
+    return popup
+
+
+def launch_popup_message_box(**kwargs):
+    """
+    This function will construct a PyQt application and will display a popup message created using the
+    'create_popup_message' function.
+    :param kwargs: The properties of the QMessageBox.
+    :return: None
+    """
+    app = QtGui.QApplication(sys.argv)
+
+    message_box = create_popup_message_box(**kwargs)
+    message_box.exec_()
+
+    del app
+
+
+def create_error_message(exception):
+    """
+    This function will create a QErrorMessage object which will display a message for the user.
+    :param exception: The exception which caused the error in the program.
+    :type exception: __builtin__.Exception
+    :return: QErrorMessage object which specifies the given error.
+    """
+    message = QtGui.QMessageBox()
+
+    message.setStandardButtons(QtGui.QMessageBox.Ok)
+    message.setIcon(QtGui.QMessageBox.Warning)
+    message.setWindowTitle(_fromUtf8("Error"))
+    message.setText(_fromUtf8("An error occurred during the process."))
+    message.setDetailedText(_fromUtf8(exception.message))
+
+    exc_type, exc_value, exc_traceback = sys.exc_info()  # most recent (if any) by default
+
+    '''
+    Reason this _can_ be bad: If an (unhandled) exception happens AFTER this,
+    or if we do not delete the labels on (not much) older versions of Py, the
+    reference we created can linger.
+
+    traceback.format_exc/print_exc do this very thing, BUT note this creates a
+    temp scope within the function.
+    '''
+
+    traceback_details = {
+                         'filename': exc_traceback.tb_frame.f_code.co_filename,
+                         'lineno': exc_traceback.tb_lineno,
+                         'name': exc_traceback.tb_frame.f_code.co_name,
+                         'type': exc_type.__name__,
+                         'message': exc_value.message  # or see traceback._some_str()
+                        }
+
+    message.setDetailedText(_fromUtf8(EXCEPTION_DISPLAYING_FORMAT % (traceback_details['type'],
+                                                                     traceback_details['filename'],
+                                                                     traceback_details['name'],
+                                                                     traceback_details['lineno'],
+                                                                     traceback_details['message'])))
+
+    del(exc_type, exc_value, exc_traceback)  # So we don't leave our local labels/objects dangling
+    # This still isn't "completely safe", though!
+    # "Best (recommended) practice: replace all exc_type, exc_value, exc_traceback
+    # with sys.exc_info()[0], sys.exc_info()[1], sys.exc_info()[2]
+
+    return message
+
+
+def launch_error_message(exception):
+    """
+    This function will construct a PyQt application and will display a popup message created using the
+    'create_error_message' function.
+    :param exception: The exception which caused the error.
+    :return: None
+    """
+    app = QtGui.QApplication(sys.argv)
+    message = create_error_message(exception)
+    message.exec_()
+
+    del app
+
+
+def error_handler(func):
+    """
+    This function will serve as a decorator for functions on the client side.
+    It will popup an error message when an unhandled error occurs , and will supply info about the error.
+    :param func: The function which might raise an error.
+    """
+    def error_handling(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as ex:
+            launch_error_message(ex)
+
+    return error_handling
 
 
 class Task(object):
@@ -395,6 +523,82 @@ class EncryptionWindow(QtGui.QMainWindow):
             self.close()
 
 
+class OperationWindow(QtGui.QMessageBox):
+    """
+    This class will present a window which indicates the program is currently performing an operation which requires the
+    user to wait until its done.
+    """
+    operation_done = QtCore.pyqtSignal(name='operationDone')
+
+    def __init__(self, text, operation, *args, **kwargs):
+        super(OperationWindow, self).__init__()
+
+        self.setup_ui(text)
+
+        self.task = operation
+        self.operation_parameters = args
+        if len(kwargs) != 0:
+            self.operation_key_parameters = kwargs
+        else:
+            self.operation_key_parameters = None
+        self.return_value = None
+
+        self.operation_done.connect(self.close)
+
+    def operation(self, *args, **kwargs):
+        self.return_value = self.task(*args, **kwargs)
+        self.operation_done.emit()
+
+    def setup_ui(self, text):
+        """
+        This function will set up the
+        :param text: str. The text which should be displayed as the message.
+        :return: None
+        """
+        self.setWindowTitle(_fromUtf8(OPERATION_WINDOW_TITLE))
+
+        self.setStandardButtons(self.Cancel)
+
+        self.setText(_fromUtf8(OPERATION_WINDOW_TEXT % text))
+
+        self.buttons()[0].setEnabled(False)
+
+    def perform_operation(self):
+        threaded = Thread(target=self.operation, args=self.operation_parameters, kwargs=self.operation_key_parameters)
+        threaded.start()
+
+    def exec_(self):
+        self.perform_operation()
+        super(OperationWindow, self).exec_()
+        return self.return_value
+
+
+def blocking_operation(func):
+    """
+    This function will wrap functions which block the GUI. Instead of blocking, the created function will display a
+    responding window which will inform the user of the blocking.
+    :param func: The function which will block the GUI and should be executed.
+    :type func:  callable
+    :return: The return value of 'func'.
+    """
+    def nonblocking_operation_window(text, *args, **kwargs):
+        """
+        This function will run the wrapped function 'func' without blocking, through an OperationWindow.
+        :param text: The text which should be displayed while the operation is being performed.
+        :type text: str
+        :return: The return value of 'func'.
+        """
+        app = QtGui.QApplication(sys.argv)
+
+        box = OperationWindow(text, func, *args, **kwargs)
+        ret_val = box.exec_()
+        del app
+
+        return ret_val
+
+    return nonblocking_operation_window
+
+
 class LoginWindow(QtGui.QDialog):
 
     server_responded = QtCore.pyqtSignal(name='serverResponded')
@@ -546,11 +750,10 @@ class LoginWindow(QtGui.QDialog):
             self.user_id = int(response.get_data())
             self.server_responded.emit()
         elif response.status == STATUS_CODES['bad data']:
-            # Failed to log in
             self.user_id = -1
+            self.server_responded.emit()
         else:
-            # TODO: raise unknown response error
-            pass
+            raise StandardError("Can't handle server response.")
 
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 8080
@@ -579,4 +782,5 @@ def main():
     sys.exit(exit_code)
 
 if __name__ == '__main__':
-    main()
+    pass
+    # main()

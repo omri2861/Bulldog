@@ -5,6 +5,7 @@ import select
 import threading
 from time import sleep
 from pickle import loads
+import subprocess
 
 """
 This program is the main server program. It will communicate with the client and link it with the database.
@@ -22,6 +23,7 @@ SELECT_TIMEOUT = 0.7
 ROUND_TIME = 1
 DATABASE_PORT = 7091
 COMMIT = "commit"
+DATABASE_PATH = r"F:\Cyber\Bulldog\database\attempt2.db"
 
 
 class ActiveClient(object):
@@ -166,7 +168,6 @@ given.
         # If it wasn't successfull, the database must have an error, which will be excepted and handled by the next
         # request.
     else:
-        # TODO: Raise error: Operation not successfull
         file_id = -1
 
     return file_id
@@ -202,13 +203,10 @@ def get_file_info_from_database(file_id, user_id, database):
     result = database.recv(networking.BAND_WIDTH)  # Doesn't really matter if the commit was successfull or not.
     # If it wasn't successfull, the database must have an error, which will be excepted and handled by the next request.
     result = loads(result)
-    print repr(result)
     method, iv, key = result[0]
     key = str(key)  # decode it from unicode to ascii string
     iv = str(iv)  # same for the iv
     key = key.decode('base64')  # Then from base64. This one is only necessary for the key
-
-    print repr((method, iv, key))
 
     return networking.EncryptedFile(method, iv, key)
 
@@ -257,15 +255,14 @@ This function is built to be working as a thread in a multiclient server.
         return
     except socket.error:
         print SOCKET_ERROR_WARNING
+        client_sock.send(networking.BDTPMessage(status=networking.STATUS_CODES['connection error'],
+                                                operation=networking.OPERATIONS['kickout'], data="").pack())
         active_sockets.remove(client_sock)
         logged_in_users.remove(client_sock)
         return
 
     if request is None:
         return
-
-    print "The client's request: "
-    print request
 
     if request.operation == networking.OPERATIONS['login']:
         response = perform_login(request, client_sock, logged_in_users, database)
@@ -279,11 +276,9 @@ This function is built to be working as a thread in a multiclient server.
         client_sock.close()
         logged_in_users.remove(client_sock)
         active_sockets.remove(client_sock)
-        print "User logged out"
         return
     else:
         # TODO: send error message and cut the connection, since the client does not use the latest version of BDTP.
-        print "Unknown operation reached"
         response = None
         client_sock.send(response)
         client_sock.close()
@@ -291,8 +286,6 @@ This function is built to be working as a thread in a multiclient server.
         active_sockets.remove(client_sock)
         return
 
-    print "And my response:"
-    print response
     client_sock.send(response.pack())
 
 
@@ -310,37 +303,28 @@ def main():
     logged_in_users = []
     active_sockets = [server_socket]
 
+    database_process = subprocess.Popen("python database_operator.py %s" % DATABASE_PATH)
+    sleep(2)
     database = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     database.connect(('loopback', DATABASE_PORT))
 
     running = True
     while running:
-        sleep(ROUND_TIME)
-        print "Extracted real socket"
         real_sockets = [bulldog_sock.get_real_socket() for bulldog_sock in active_sockets]
-        print "Selecting...\n.\n.\n.\n.\n.\n.\n.\n"
         readable, writable, excepted = select.select(real_sockets, real_sockets, real_sockets,
                                                      SELECT_TIMEOUT)
         readable_indices = [active_sockets.index(real) for real in readable]
         excepted_indices = [active_sockets.index(real) for real in excepted]
-        print "Readable: ",
-        print readable_indices
-        print "Excepted: ",
-        print excepted_indices
-        print "Extracted Indices, Starting work."
         for index in excepted_indices:
-            "Some socket had an error."
             sock = active_sockets[index]
             logged_in_users.remove(sock)
             active_sockets.remove(sock)
         for index in readable_indices:
             sock = active_sockets[index]
             if sock is not server_socket:
-                print "Handling received message:"
                 threading.Thread(target=receive_and_handle_message,
                                  args=(sock, logged_in_users, active_sockets, database)).start()
             else:
-                print "Accepting a new one to the family."
                 new_client, client_address = server_socket.accept()
                 active_sockets.append(new_client)
 

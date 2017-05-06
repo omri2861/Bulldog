@@ -15,7 +15,8 @@ OPERATIONS = {
     "logout": "LOUT",
     "add file": "ADD\x00",
     "decrypt file": "DEC\x00",
-    "create connection": "CON\x00"
+    "create connection": "CON\x00",
+    "kickout": "KICK"
 }
 STATUS_CODES = {
     "request": 0,
@@ -24,7 +25,8 @@ STATUS_CODES = {
     "bad data": 400,
     "bad protocol usage": 505,
     "unauthorized": 409,
-    "inactivity logout": 509
+    "inactivity logout": 509,
+    "connection error": 508
 }
 BAD_METHOD_MSG = "Invalid method: Method should be a number in the range of 1-3."
 BAD_STRING_MSG = "This is not a BDTP Message. Note: It is likely that the message is an empty string due to " \

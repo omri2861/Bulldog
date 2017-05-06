@@ -1,19 +1,12 @@
-import os
-import multiprocessing
-import sys
-from PyQt4 import QtGui, QtCore
-from Bulldog import GUI, encryption, networking
+from PyQt4 import QtGui
+from Bulldog.client_functions import *
+from Bulldog import encryption
 from pickle import dumps, loads
-import socket
 
 """
 This is the main encryption program of Bulldog. It should be launched when the user wants to encrypt file/s.
 """
 
-SERVER_IP = "127.0.0.1"
-SERVER_PORT = 8080
-SERVER_ADDRESS = SERVER_IP, SERVER_PORT
-DEFAULT_TIMEOUT = socket.getdefaulttimeout()
 # The key and IV sizes according to the encryption methods (by their number):
 IV_SIZES = {
     1: 16,
@@ -26,25 +19,6 @@ KEY_SIZES = {
     3: 24
 }
 NO_TASK_MSG = "Error: Did not receive task from subprocess."
-
-
-def get_directory_files_list(dir_path):
-    """
-The function will iterate over all of the files and subdirectories in the given path, and will return a list of all
-the files it contains and its sub directories. If the given path is a file, it will be returned in a list.
-    :param dir_path: The path of the directory which should be listed.
-    :return: A list of strings containing the directory's files' full path.
-    """
-    result = []
-    if os.path.isfile(dir_path):
-        return [dir_path]
-    for file_name in os.listdir(dir_path):
-        file_path = os.path.join(dir_path, file_name)
-        if os.path.isdir(file_path):
-            result += get_directory_files_list(file_path)
-        else:
-            result.append(file_path)
-    return result
 
 
 def launch_config_window(encryption_path, parent_input):
@@ -105,89 +79,20 @@ expected to return its result pickled through the parent input instead of a retu
         parent_input.close()
 
 
-def start_login_subprocess():
+@GUI.blocking_operation
+def encrypt_files(task, user_id, server):
     """
-    This function will start the find_username_and_password function as a different subprocess.
-    :return: int. The user id if logged in successfully. -1 if an error occurred or the user chose to abort the task.
-    """
-    child_conn, parent_conn = multiprocessing.Pipe(duplex=True)
-    login_subprocess = multiprocessing.Process(target=find_username_and_password, args=(child_conn,))
-    login_subprocess.start()
-
-    login_subprocess.join()
-
-    login_data = parent_conn.recv()
-    username, password = tuple(login_data.split(networking.DATA_SEP))
-    return username, password
-
-
-def perform_login(server_socket, username, password):
-    """
-    This function will send a login message to the server and will return the user's id as a result.
-    :param server_socket: The socket of the server which should be logged in to.
-    :param username: The username of the user.
-    :param password: The password of the user.
-    :return: int. The user's id returned by the server, extracted from the message.
-    """
-    login_data = username + networking.DATA_SEP + password
-    login_msg = networking.BDTPMessage(operation=networking.OPERATIONS['login'],
-                                       status=networking.STATUS_CODES['request'], data=login_data)
-    server_socket.send(login_msg.pack())
-    server_response = server_socket.smart_recv()
-    user_id = int(server_response.get_data())
-
-    return user_id
-
-
-def main():
-    """
-    The main function of the program. Will execute the GUI and request the server to encrypt the file.
+    This function will encrypt all the files which are in the path in the task object.
+    :param task: The object which specifies the required information to perform the encryption.
+    :type task: Task
+    :param user_id: The id of the user which encrypts the files.
+    :type user_id: int
+    :param server: The server socket.
+    :type server: networking.BulldogSocket
     :return: None
     """
-    encryption_path = sys.argv[1]
-
-    child_conn, parent_conn = multiprocessing.Pipe(duplex=True)
-    config_window = multiprocessing.Process(target=launch_config_window, args=(encryption_path, child_conn))
-
-    # Start the encryption window subprocess:
-    config_window.start()
-
-    # perform the actions which doesn't depend on the configuration window- create a connection:
-    server = networking.BulldogSocket()
-    server.settimeout(DEFAULT_TIMEOUT)
-    try:
-        server.connect(SERVER_ADDRESS)
-        print "Connected to server."
-    except socket.timeout:
-        print "Couldn't connect to server."
-        sys.exit(1)
-        # TODO: Handle server disconnection.
-
-    # Receive the task object:
-    task = parent_conn.recv()
-    task = loads(task)
-
-    # wait until the configuration window is done:
-    config_window.join()
-    child_conn.close()
-
-    if task is None:
-        raise Exception(NO_TASK_MSG)
-
-    user_id = perform_login(server, task.username, task.password)
-
-    if user_id == -1:
-        username, password = start_login_subprocess()
-        user_id = perform_login(server, username, password)
-
-    # Even after the login window confirmed the username and password, the user id is bad, indicating that the user
-    # canceled the process or an error occurred:
-    if user_id == -1:
-        # TODO: handle login error/ cancellation
-        pass
-
-    # Start encrypting:
     paths_to_encrypt = get_directory_files_list(task.path)
+
     for path in paths_to_encrypt:
         iv = '0' * IV_SIZES[task.method]
         key = os.urandom(KEY_SIZES[task.method])
@@ -202,8 +107,52 @@ def main():
         file_id = int(server_response.get_data())
         encryption.encrypt_file(path, task.method, user_id, file_id, iv, key)
 
-    # TODO:Finally, remove the original files:
-    pass
+        os.remove(path)
+
+
+@GUI.error_handler
+def main():
+    """
+    The main function of the program. Will execute the GUI and request the server to encrypt the file.
+    :return: None
+    """
+    encryption_path = sys.argv[1]
+
+    # Connect to the server:
+    server = connect_to_server(CONNECTING_TO_SERVER_TEXT)
+    if server is None:
+        sys.exit(-1)
+
+    # Start the encryption window subprocess:
+    child_conn, parent_conn = multiprocessing.Pipe(duplex=True)
+    config_window = multiprocessing.Process(target=launch_config_window, args=(encryption_path, child_conn))
+    config_window.start()
+
+    # Receive the task object:
+    task = parent_conn.recv()
+    task = loads(task)
+
+    # wait until the configuration window is done:
+    config_window.join()
+    child_conn.close()
+
+    if task is None:
+        raise Exception(NO_TASK_MSG)
+
+    # Login to the server:
+    user_id = perform_login(server, task.username, task.password)
+    if user_id == -1:
+        username, password = start_login_subprocess(find_username_and_password)
+        user_id = perform_login(server, username, password)
+
+    if user_id == -1:
+        # Even after the login window confirmed the username and password, the user id is bad, indicating that the user
+        # canceled the process or an error occurred:
+        server.close()
+        sys.exit()
+
+    # Start encrypting:
+    encrypt_files(text=ENCRYPTING_FILES_MSG, task=task, user_id=user_id, server=server)
 
     # Logout from the server:
     logout_msg = networking.BDTPMessage(operation=networking.OPERATIONS['logout'],
