@@ -11,19 +11,20 @@ import subprocess
 This program is the main server program. It will communicate with the client and link it with the database.
 """
 
-MAX_CLIENTS = 1
+MAX_CLIENTS = 20
 SEPERATOR = '\r\n'
 ID_ANSWER_FORMAT = "i"
 USER_INACTIVITY_TIMEOUT = 120
-SOCKET_TIMEOUT_WARNING = "The socket was timed out. If this repeats itself, it's a problem, but if it only happens " \
-                         "once than it could just be timing problems, and thats just what this warning is for."
-SOCKET_ERROR_WARNING = "The socket had an error. If this repeats itself, it's a problem, but if it only happens once " \
-                       "than it could just be timing problems."
+SOCKET_TIMEOUT_WARNING = "The socket connected by the user %s is inactive, therefore kicked out of the server."
+SOCKET_ERROR_WARNING = "The socket connected by the user %s had an error, therefore kicked out of the server."
 SELECT_TIMEOUT = 0.7
 ROUND_TIME = 1
 DATABASE_PORT = 7091
 COMMIT = "commit"
 DATABASE_PATH = r"F:\Cyber\Bulldog\database\attempt2.db"
+IP = "0.0.0.0"
+PORT = 8080
+ADDRESS = IP, PORT
 
 
 class ActiveClient(object):
@@ -235,7 +236,7 @@ def extract_file_info(request, user, database):
     return response
 
 
-def receive_and_handle_message(client_sock, logged_in_users, active_sockets, database):
+def receive_and_handle_message(client_sock, logged_in_users, database):
     """
 This function will receive the message from the readable socket given, will handle the request and finally send a
 response to the request.
@@ -244,25 +245,14 @@ This function is built to be working as a thread in a multiclient server.
     :param client_sock: socket.socket object. The readable socket which contains the request.
     :param logged_in_users: list. The list of logged in users, each item in the list should be an ActiveClient instance
     which contains the logged in user's data.
-    :param active_sockets: A list of the currently connected sockets in the server.
     :param database: The loopback socket which is connected to the database operator program.
-    :return: None
+    :return: True if the session should continue, false otherwise.
     """
-    try:
-        request = client_sock.smart_recv()
-    except socket.timeout:
-        print SOCKET_TIMEOUT_WARNING
-        return
-    except socket.error:
-        print SOCKET_ERROR_WARNING
-        client_sock.send(networking.BDTPMessage(status=networking.STATUS_CODES['connection error'],
-                                                operation=networking.OPERATIONS['kickout'], data="").pack())
-        active_sockets.remove(client_sock)
-        logged_in_users.remove(client_sock)
-        return
+    request = client_sock.smart_recv()
+    print request
 
     if request is None:
-        return
+        return False
 
     if request.operation == networking.OPERATIONS['login']:
         response = perform_login(request, client_sock, logged_in_users, database)
@@ -275,18 +265,58 @@ This function is built to be working as a thread in a multiclient server.
     elif request.operation == networking.OPERATIONS['logout']:
         client_sock.close()
         logged_in_users.remove(client_sock)
-        active_sockets.remove(client_sock)
-        return
+        return False
     else:
-        # TODO: send error message and cut the connection, since the client does not use the latest version of BDTP.
-        response = None
-        client_sock.send(response)
+        response = networking.BDTPMessage(operation=networking.OPERATIONS['kickout'],
+                                          status=networking.STATUS_CODES['bad protocol usage'], data="")
+        client_sock.send(response.pack())
         client_sock.close()
-        logged_in_users.remove(client_sock)
-        active_sockets.remove(client_sock)
-        return
+        return False
 
     client_sock.send(response.pack())
+    return True
+
+
+def start_session(client, logged_in_users, database):
+    """
+    This function will handle a session with a single connected client. The function will take care of all of the
+    client's requests, and will then end the communication with him. This function should run as a thread for each
+    connected client.
+    :param client: The client's socket.
+    :param logged_in_users: The list of active users class of the server.
+    :param database: The socket connected to the database.
+    :return: None
+    """
+    continue_session = True
+    while continue_session:
+        try:
+            continue_session = receive_and_handle_message(client, logged_in_users, database)
+        except socket.timeout:
+            logout_msg = networking.BDTPMessage(operation=networking.OPERATIONS['kickout'],
+                                                status=networking.STATUS_CODES['inactivity logout'], data='')
+            client.send(logout_msg.pack())
+            client.close()
+
+            try:
+                active_client = logged_in_users[logged_in_users.index(client)]
+                username = active_client.username
+            except ValueError or IndexError:
+                username = "unknown"
+
+            print SOCKET_TIMEOUT_WARNING % username
+            continue_session = False
+
+        except socket.error:
+            client.close()
+
+            try:
+                active_client = logged_in_users[logged_in_users.index(client)]
+                username = active_client.username
+            except ValueError or IndexError:
+                username = "unknown"
+
+            print SOCKET_ERROR_WARNING % username
+            continue_session = False
 
 
 def main():
@@ -295,13 +325,11 @@ def main():
     them.
     :return: None
     """
-    # TODO: Create the inactive users deletion thread
-    time.clock()
     server_socket = networking.BulldogSocket()
-    server_socket.bind(('0.0.0.0', 8080))
+    server_socket.bind(ADDRESS)
     server_socket.listen(MAX_CLIENTS)
     logged_in_users = []
-    active_sockets = [server_socket]
+    sessions = []
 
     database_process = subprocess.Popen("python database_operator.py %s" % DATABASE_PATH)
     sleep(2)
@@ -310,23 +338,12 @@ def main():
 
     running = True
     while running:
-        real_sockets = [bulldog_sock.get_real_socket() for bulldog_sock in active_sockets]
-        readable, writable, excepted = select.select(real_sockets, real_sockets, real_sockets,
-                                                     SELECT_TIMEOUT)
-        readable_indices = [active_sockets.index(real) for real in readable]
-        excepted_indices = [active_sockets.index(real) for real in excepted]
-        for index in excepted_indices:
-            sock = active_sockets[index]
-            logged_in_users.remove(sock)
-            active_sockets.remove(sock)
-        for index in readable_indices:
-            sock = active_sockets[index]
-            if sock is not server_socket:
-                threading.Thread(target=receive_and_handle_message,
-                                 args=(sock, logged_in_users, active_sockets, database)).start()
-            else:
-                new_client, client_address = server_socket.accept()
-                active_sockets.append(new_client)
+        readable, writable, excepted = select.select([server_socket], [], [])
+        if readable:
+            new_client, new_addr = server_socket.accept()
+            new_session = threading.Thread(target=start_session, args=(new_client, logged_in_users, database))
+            sessions.append(new_session)
+            new_session.start()
 
 if __name__ == '__main__':
     try:
