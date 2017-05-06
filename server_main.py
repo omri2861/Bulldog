@@ -13,12 +13,9 @@ This program is the main server program. It will communicate with the client and
 
 MAX_CLIENTS = 20
 SEPERATOR = '\r\n'
-ID_ANSWER_FORMAT = "i"
 USER_INACTIVITY_TIMEOUT = 120
 SOCKET_TIMEOUT_WARNING = "The socket connected by the user %s is inactive, therefore kicked out of the server."
 SOCKET_ERROR_WARNING = "The socket connected by the user %s had an error, therefore kicked out of the server."
-SELECT_TIMEOUT = 0.7
-ROUND_TIME = 1
 DATABASE_PORT = 7091
 COMMIT = "commit"
 DATABASE_PATH = r"F:\Cyber\Bulldog\database\attempt2.db"
@@ -132,9 +129,10 @@ This function will handle a login message and will return the response which sho
     username, password = tuple(request.get_data().split(SEPERATOR))
     user_id = authenticate_user(username, password, database)
     login_answer.set_data(user_id)
-    # TODO: Create Error Codes
     if user_id != -1:
         logged_in_users.append(ActiveClient(client_sock, user_id, username))
+    else:
+        login_answer.status = networking.STATUS_CODES['bad data']
     return login_answer
 
 
