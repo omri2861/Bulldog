@@ -2,6 +2,7 @@ from PyQt4 import QtGui
 from Bulldog.client_functions import *
 from Bulldog import encryption
 from pickle import dumps, loads
+from multiprocessing import freeze_support
 
 """
 This is the main encryption program of Bulldog. It should be launched when the user wants to encrypt file/s.
@@ -19,6 +20,9 @@ KEY_SIZES = {
     3: 24
 }
 NO_TASK_MSG = "Error: Did not receive task from subprocess."
+SERVER_IP = "127.0.0.1"
+SERVER_PORT = 8080
+SERVER_ADDRESS = SERVER_IP, SERVER_PORT
 
 
 def launch_config_window(encryption_path, parent_input):
@@ -117,11 +121,7 @@ def main():
     :return: None
     """
     encryption_path = sys.argv[1]
-
-    # Connect to the server:
-    server = connect_to_server(CONNECTING_TO_SERVER_TEXT)
-    if server is None:
-        sys.exit(-1)
+    print encryption_path
 
     # Start the encryption window subprocess:
     child_conn, parent_conn = multiprocessing.Pipe(duplex=True)
@@ -137,7 +137,12 @@ def main():
     child_conn.close()
 
     if task is None:
-        raise Exception(NO_TASK_MSG)
+        sys.exit()
+    
+    # Connect to the server:
+    server = connect_to_server(CONNECTING_TO_SERVER_TEXT)
+    if server is None:
+        sys.exit(-1)
 
     # Login to the server:
     user_id = perform_login(server, task.username, task.password)
@@ -161,4 +166,5 @@ def main():
     server.close()
 
 if __name__ == '__main__':
+    freeze_support()
     main()

@@ -3,6 +3,7 @@ import sys
 from Bulldog import GUI, networking
 from socket import timeout as sock_timeout
 from socket import error as sock_error
+from socket import getdefaulttimeout
 import multiprocessing
 
 """
@@ -55,7 +56,8 @@ def connect_to_server():
         except sock_timeout:
             attempts += 1
 
-    raise sock_error(NO_CONNECTION_MSG)
+    server.settimeout(getdefaulttimeout())
+    return None
 
 
 @GUI.error_handler

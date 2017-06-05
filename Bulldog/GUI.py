@@ -18,6 +18,7 @@ from PyQt4 import QtCore, QtGui
 from time import sleep
 from networking import *
 from threading import Thread
+import os
 
 try:
     _fromUtf8 = QtCore.QString.fromUtf8
@@ -282,13 +283,21 @@ class EncryptionWindow(QtGui.QMainWindow):
         self.verticalLayout.addItem(spacerItem1)
 
         # Set up the file- selecting tree widget:
-        self.model = QtGui.QFileSystemModel(self.file_selection)
-        self.model.setRootPath(_fromUtf8(self.selected_path))
-        self.file_selector = QtGui.QTreeView(self.file_selection)
-        self.file_selector.setModel(self.model)
-        self.file_selector.setRootIndex(self.model.index(self.model.rootPath()))
-        self.file_selector.setObjectName(_fromUtf8("file_selector"))
-        self.verticalLayout.addWidget(self.file_selector)
+        if os.path.isdir(self.selected_path):
+            self.model = QtGui.QFileSystemModel(self.file_selection)
+            self.model.setRootPath(_fromUtf8(self.selected_path))
+            self.file_selector = QtGui.QTreeView(self.file_selection)
+            self.file_selector.setModel(self.model)
+            self.file_selector.setRootIndex(self.model.index(self.model.rootPath()))
+            self.file_selector.setObjectName(_fromUtf8("file_selector"))
+            self.verticalLayout.addWidget(self.file_selector)
+        else:
+            self.file_selector = self.username_edit = QtGui.QLineEdit(self.file_selection)
+            self.file_selector.setText(_fromUtf8(self.selected_path))
+            self.file_selector.setReadOnly(True)
+            self.verticalLayout.addWidget(self.file_selector)
+            single_file_spacer = QtGui.QSpacerItem(20, 20, QtGui.QSizePolicy.Preferred, QtGui.QSizePolicy.Expanding)
+            self.verticalLayout.addItem(single_file_spacer)
 
         spacerItem2 = QtGui.QSpacerItem(20, 13, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Fixed)
         self.verticalLayout.addItem(spacerItem2)
@@ -339,7 +348,8 @@ class EncryptionWindow(QtGui.QMainWindow):
         self.TDES_layout.addItem(spacerItem8)
         self.TDES_button = QtGui.QRadioButton(self.encryption_selection)
         self.TDES_button.setObjectName(_fromUtf8("TDES_button"))
-        self.TDES_layout.addWidget(self.TDES_button)
+        # self.TDES_layout.addWidget(self.TDES_button)
+        self.TDES_button.setDisabled(True)  #TODO: Fix TDES encryption
         self.verticalLayout_2.addLayout(self.TDES_layout)
         spacerItem9 = QtGui.QSpacerItem(20, 40, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding)
         self.verticalLayout_2.addItem(spacerItem9)

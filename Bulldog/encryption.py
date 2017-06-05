@@ -20,7 +20,7 @@ MODE_AES = 1
 MODE_BLOWFISH = 2
 MODE_TDES = 3
 CHUNK_SIZE = 256
-PADDING = '\x00'
+PADDING = 'o'
 ENCRYPTED_FILE_ENDING = ".bef"
 MAGIC_NUMBER = 0x286
 HEADERS_FORMAT = "hxxixxi"
@@ -221,7 +221,8 @@ def decrypt_file(filename, method, iv, key):
             chunk = input_file.read(CHUNK_SIZE)
             while len(chunk) != 0:
                 cipher = suite.decrypt(chunk)
-                cipher = cipher.rstrip(PADDING)
+                if len(cipher) < CHUNK_SIZE:
+                    cipher = cipher.rstrip(PADDING)
                 output.write(cipher)
                 chunk = input_file.read(CHUNK_SIZE)
 

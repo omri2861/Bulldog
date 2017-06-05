@@ -1,5 +1,6 @@
 from Bulldog import encryption
 from Bulldog.client_functions import *
+from multiprocessing import freeze_support
 
 """
 This is the main decryption program of Bulldog. It should be launched when the user wants to decrypt file/s.
@@ -84,8 +85,7 @@ def find_files_encrypter_id(paths):
 
     for path in paths[1:]:
         user_id, file_id = encryption.scan_file_header(path)
-        if user_id != first_user_id:
-            return -1
+        return user_id
 
     return first_user_id
 
@@ -122,6 +122,7 @@ def main():
     encrypter_id = find_files_encrypter_id(paths_to_decrypt)
     if encrypter_id == -1:
         GUI.launch_popup_message_box(text=NO_IDENTICAL_ID_TEXT, title=NO_IDENETICAL_ID_TITLE)
+        sys.exit()
 
     # Find the username of the user which encrypted the files
     username, password = start_login_subprocess(find_username_and_password, encrypter_id)
@@ -129,6 +130,8 @@ def main():
         sys.exit(1)
 
     server = connect_to_server(CONNECTING_TO_SERVER_TEXT)
+    if server is None:
+        sys.exit(-1)
 
     user_id = perform_login(server, username, password)
 
@@ -142,7 +145,5 @@ def main():
     server.close()
 
 if __name__ == '__main__':
-    try:
-        main()
-    except KeyboardInterrupt:
-        exit(-1)
+    freeze_support()
+    main()
